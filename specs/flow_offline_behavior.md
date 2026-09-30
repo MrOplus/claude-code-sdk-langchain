@@ -24,7 +24,7 @@ is needed.
 1. A single human message is sent verbatim
 2. System messages become the real system prompt, and they take precedence (with a
    warning) over the constructor `system_prompt`
-3. Multi-turn history is sent as a labelled transcript
+3. Multi-turn history is sent as a structured `<conversation_history>` block
 4. Images are dropped with a warning
 5. `temperature` / `max_tokens` log a warning only when a value is set
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-code-langchain"
-version = "0.2.0"
+version = "0.3.0"
 description = "LangChain chat model backed by the Claude Agent SDK - prototype with your Claude Code subscription"
 readme = "README.md"
 authors = [
@@ -47,6 +47,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "langchain>=1.0.0",
     "black>=24.0.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",

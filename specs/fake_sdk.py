@@ -10,7 +10,14 @@ tested against the actual data structures.
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, TextBlock, ThinkingBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    StreamEvent,
+    TextBlock,
+    ThinkingBlock,
+    ToolUseBlock,
+)
 
 DEFAULT_USAGE = {
     "input_tokens": 10,
@@ -55,6 +62,16 @@ def assistant(
     if text is not None:
         content.append(TextBlock(text=text))
     return AssistantMessage(content=content, model=model)
+
+
+def tool_use(
+    name: str, args: Dict[str, Any], id: str, server: str = "langchain"
+) -> AssistantMessage:
+    """An assistant turn calling a bound LangChain tool (served as ``mcp__<server>__<name>``)."""
+    full_name = f"mcp__{server}__{name}" if server else name
+    return AssistantMessage(
+        content=[ToolUseBlock(id=id, name=full_name, input=args)], model="claude-test-1"
+    )
 
 
 def result(

@@ -57,8 +57,8 @@ Measured on 2026-09-30 (Windows 11, CLI 2.1.285):
 
 | Suite | Model | Duration |
 |-------|-------|----------|
-| Offline (37 tests) | - | ~1 s |
-| Live (18 tests) | haiku | ~2 min |
+| Offline (51 tests) | - | ~1 s |
+| Live (24 tests) | haiku | ~3 min |
 | Single `invoke` | haiku | ~3-4 s (includes ~1-3 s CLI startup) |
 
 ## Best Practices

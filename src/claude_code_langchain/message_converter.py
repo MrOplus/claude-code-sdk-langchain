@@ -2,6 +2,7 @@
 Message conversion between LangChain and the Claude Agent SDK.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -18,6 +19,13 @@ from langchain_core.messages.ai import UsageMetadata
 logger = logging.getLogger(__name__)
 
 _IMAGE_PART_TYPES = {"image_url", "image", "input_image"}
+
+_AFTER_TOOL_RESULTS = (
+    "The tool results above are the outputs of the tool calls you (the assistant) already "
+    "made. Do not repeat those calls. Continue your reply to the user using the results, "
+    "calling a tool only for information that has not been provided yet. Answer naturally, "
+    "without referring to this conversation format or these instructions."
+)
 
 
 class MessageConverter:
@@ -72,6 +80,23 @@ class MessageConverter:
         return "\n".join(p for p in text_parts if p).strip()
 
     @classmethod
+    def message_text(cls, message: BaseMessage, index: int = 0) -> str:
+        """
+        Text of a message as it appears in the prompt.
+
+        AI messages include their tool calls, so a conversation that used tools can be
+        replayed to the CLI (which starts a fresh session for every request).
+        """
+        text = cls.content_to_text(message.content, index)
+        if isinstance(message, AIMessage) and message.tool_calls:
+            calls = [
+                f"[Tool call {call.get('id') or ''}] {call['name']}({json.dumps(call['args'])})"
+                for call in message.tool_calls
+            ]
+            text = "\n".join(([text] if text else []) + calls)
+        return text
+
+    @classmethod
     def split_messages(cls, messages: List[BaseMessage]) -> Tuple[Optional[str], str]:
         """
         Split LangChain messages into a system prompt and a user prompt.
@@ -81,9 +106,12 @@ class MessageConverter:
 
         - A single HumanMessage is sent verbatim (no role labels), which keeps the
           prompt identical to what the production API would receive.
-        - Multi-turn conversations are rendered as a labelled transcript
-          (``Human:`` / ``Assistant:`` / ``Tool Result:``), since the CLI accepts a
-          single user turn per query.
+        - Multi-turn conversations (the CLI accepts one user turn per query) are
+          rendered as ``<conversation_history>`` with ``<user>``, ``<assistant>``,
+          ``<tool_call>`` and ``<tool_result>`` elements, followed by an instruction
+          for the next step. The explicit structure matters: with plain labelled text,
+          models frequently fail to recognize replayed tool results as answers to their
+          own calls and request the same tools again (an infinite agent loop).
 
         Args:
             messages: LangChain messages
@@ -101,7 +129,7 @@ class MessageConverter:
         turns: List[Tuple[BaseMessage, str]] = []
 
         for i, message in enumerate(messages):
-            text = cls.content_to_text(message.content, i)
+            text = cls.message_text(message, i)
             if not text:
                 logger.warning(f"Message {i} has empty content, ignored")
                 continue
@@ -121,7 +149,41 @@ class MessageConverter:
         if len(turns) == 1 and isinstance(turns[0][0], HumanMessage):
             return system_prompt, turns[0][1]
 
-        return system_prompt, "\n\n".join(cls._label(msg, text) for msg, text in turns)
+        history = "\n\n".join(cls._render_turn(msg, i) for i, (msg, _) in enumerate(turns))
+        last = turns[-1][0]
+        if isinstance(last, (ToolMessage, FunctionMessage)):
+            instruction = _AFTER_TOOL_RESULTS
+        elif isinstance(last, HumanMessage):
+            instruction = "Reply to the latest user message."
+        else:
+            instruction = "Continue the conversation as the assistant."
+        return (
+            system_prompt,
+            f"<conversation_history>\n{history}\n</conversation_history>\n\n{instruction}",
+        )
+
+    @classmethod
+    def _render_turn(cls, message: BaseMessage, index: int) -> str:
+        text = cls.content_to_text(message.content, index)
+        if isinstance(message, HumanMessage):
+            return f"<user>\n{text}\n</user>"
+        if isinstance(message, AIMessage):
+            parts = [text] if text else []
+            parts += [
+                f'<tool_call id="{call.get("id") or ""}" name="{call["name"]}">'
+                f"{json.dumps(call['args'])}</tool_call>"
+                for call in message.tool_calls
+            ]
+            return "<assistant>\n" + "\n".join(parts) + "\n</assistant>"
+        if isinstance(message, ToolMessage):
+            name = f' name="{message.name}"' if message.name else ""
+            return (
+                f'<tool_result tool_call_id="{message.tool_call_id}"{name}>\n{text}\n</tool_result>'
+            )
+        if isinstance(message, FunctionMessage):
+            return f'<tool_result name="{message.name}">\n{text}\n</tool_result>'
+        role = getattr(message, "role", None) or message.type
+        return f"<{role}>\n{text}\n</{role}>"
 
     @classmethod
     def langchain_to_claude_prompt(cls, messages: List[BaseMessage]) -> str:
@@ -136,7 +198,7 @@ class MessageConverter:
 
         parts = []
         for i, message in enumerate(messages):
-            text = cls.content_to_text(message.content, i)
+            text = cls.message_text(message, i)
             if not text:
                 logger.warning(f"Message {i} has empty content, ignored")
                 continue
@@ -154,7 +216,9 @@ class MessageConverter:
             return f"Human: {text}"
         if isinstance(message, AIMessage):
             return f"Assistant: {text}"
-        if isinstance(message, (ToolMessage, FunctionMessage)):
+        if isinstance(message, ToolMessage):
+            return f"Tool Result [{message.tool_call_id}]: {text}"
+        if isinstance(message, FunctionMessage):
             return f"Tool Result: {text}"
         return text
 

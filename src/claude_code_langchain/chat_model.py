@@ -5,6 +5,7 @@ LangChain chat model backed by the Claude Agent SDK (Claude Code CLI).
 import asyncio
 import concurrent.futures
 import contextlib
+import json
 import logging
 import queue
 import threading
@@ -12,13 +13,16 @@ from typing import (
     Any,
     AsyncGenerator,
     AsyncIterator,
+    Callable,
     Coroutine,
     Dict,
     Iterator,
     List,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
+    Union,
 )
 
 from langchain_core.callbacks import (
@@ -26,8 +30,13 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import BaseChatModel, LangSmithParams
+from langchain_core.language_models.base import LanguageModelInput
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ConfigDict, Field
 
 from .message_converter import MessageConverter
@@ -42,11 +51,15 @@ try:
         CLIConnectionError,
         CLIJSONDecodeError,
         CLINotFoundError,
+        HookMatcher,
         ProcessError,
         ResultMessage,
+        SdkMcpTool,
         StreamEvent,
         TextBlock,
         ThinkingBlock,
+        ToolUseBlock,
+        create_sdk_mcp_server,
     )
 
     CLAUDE_CODE_AVAILABLE = True
@@ -59,6 +72,12 @@ DEFAULT_MODEL = "sonnet"
 
 _INTERRUPT_TIMEOUT = 5.0
 """Seconds to wait for the CLI to acknowledge an interrupt on early exit."""
+
+_TOOL_SERVER = "langchain"
+"""In-process MCP server name under which bound LangChain tools are exposed."""
+
+_TOOL_PREFIX = f"mcp__{_TOOL_SERVER}__"
+"""Prefix the CLI adds to the names of tools served by ``_TOOL_SERVER``."""
 
 _T = TypeVar("_T")
 
@@ -253,22 +272,49 @@ class ClaudeCodeChatModel(BaseChatModel):
             return message_system_prompt
         return self.system_prompt
 
-    def _build_options(self, system_prompt: Optional[str]) -> "ClaudeAgentOptions":
+    def _build_options(
+        self,
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Any = None,
+    ) -> "ClaudeAgentOptions":
         extra_args: Dict[str, Optional[str]] = {}
         if not self.persist_session:
             extra_args["no-session-persistence"] = None
+
+        mcp_servers = dict(self.mcp_servers)
+        allowed_tools = list(self.allowed_tools)
+        hooks = None
+
+        if tools and tool_choice != "none":
+            forced = [t for t in tools if t["function"]["name"] == tool_choice]
+            if forced:
+                tools = forced  # a forced tool is the only one Claude can call
+            mcp_servers[_TOOL_SERVER] = _deferred_tool_server(tools)
+            allowed_tools += [_TOOL_PREFIX + t["function"]["name"] for t in tools]
+            hooks = {
+                "PreToolUse": [
+                    HookMatcher(matcher=f"^{_TOOL_PREFIX}", hooks=[_defer_langchain_tool])
+                ]
+            }
+            instruction = _tool_choice_instruction(tool_choice)
+            if instruction:
+                system_prompt = (
+                    f"{system_prompt}\n\n{instruction}" if system_prompt else instruction
+                )
 
         return ClaudeAgentOptions(
             model=self.model_name,
             system_prompt=system_prompt,
             tools=list(self.builtin_tools),
-            allowed_tools=list(self.allowed_tools),
+            allowed_tools=allowed_tools,
             max_turns=self.max_turns,
             permission_mode=self.permission_mode,  # type: ignore[arg-type]
             cwd=self.cwd,
             setting_sources=self.setting_sources,  # type: ignore[arg-type]
-            mcp_servers=dict(self.mcp_servers),
+            mcp_servers=mcp_servers,
             strict_mcp_config=self.strict_mcp_config,
+            hooks=hooks,  # type: ignore[arg-type]
             effort=self.effort,  # type: ignore[arg-type]
             env=dict(self.env),
             cli_path=self.cli_path,
@@ -280,14 +326,46 @@ class ClaudeCodeChatModel(BaseChatModel):
     def _prepare(
         self, messages: List[BaseMessage], stop: Optional[List[str]], kwargs: Dict[str, Any]
     ) -> Tuple[str, "ClaudeAgentOptions", Optional[List[str]]]:
+        kwargs = dict(kwargs)
+        tools = kwargs.pop("tools", None)
+        tool_choice = kwargs.pop("tool_choice", None)
+        kwargs.pop("ls_structured_output_format", None)  # tracing hint from with_structured_output
         if kwargs:
             logger.warning(
                 f"Additional parameters {list(kwargs.keys())} are not supported and will be "
                 "ignored."
             )
         message_system, prompt = MessageConverter.split_messages(messages)
-        options = self._build_options(self._resolve_system_prompt(message_system))
+        options = self._build_options(
+            self._resolve_system_prompt(message_system), tools, tool_choice
+        )
         return prompt, options, stop if stop is not None else self.stop_sequences
+
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], type, Callable, BaseTool]],
+        *,
+        tool_choice: Optional[Union[str, bool, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """
+        Bind tools so the model can request tool calls.
+
+        Tools are exposed to Claude as native tools. When Claude calls one, the
+        request stops and the call is returned in ``AIMessage.tool_calls``; nothing is
+        executed. Run the tool yourself (or with ``ToolNode`` / an agent) and pass the
+        result back as a ``ToolMessage``.
+
+        Args:
+            tools: LangChain tools, functions, Pydantic models or OpenAI-style tool dicts.
+            tool_choice: ``None``/``"auto"`` (model decides), ``"any"``/``"required"``/
+                ``True`` (must call a tool), a tool name, or ``"none"``. Forcing a tool is
+                done by instruction, so it is best-effort.
+        """
+        formatted = [convert_to_openai_tool(tool) for tool in tools]
+        if isinstance(tool_choice, dict):
+            tool_choice = (tool_choice.get("function") or {}).get("name") or tool_choice.get("name")
+        return super().bind(tools=formatted, tool_choice=tool_choice, **kwargs)
 
     # ---------------------------------------------------------------- core loop
 
@@ -338,9 +416,12 @@ class ClaudeCodeChatModel(BaseChatModel):
 
         Text is streamed token-by-token from partial stream events. If the CLI does not
         emit partial events for a block, the complete block from the AssistantMessage
-        is used instead. The final chunk carries usage and response metadata.
+        is used instead. Calls to bound LangChain tools are emitted as tool call chunks
+        (the CLI defers them instead of executing). The final chunk carries usage and
+        response metadata.
         """
         stop_filter = _StopSequenceFilter(stop)
+        tool_calls_emitted = 0
         text_deltas = 0
         thinking_deltas = 0
         model_name = self.model_name
@@ -388,6 +469,23 @@ class ClaudeCodeChatModel(BaseChatModel):
                                     yield chunk
                             elif isinstance(block, ThinkingBlock) and thinking_deltas == 0:
                                 yield thinking_chunk(block.thinking)
+                            elif isinstance(block, ToolUseBlock) and block.name.startswith(
+                                _TOOL_PREFIX
+                            ):
+                                yield ChatGenerationChunk(
+                                    message=AIMessageChunk(
+                                        content="",
+                                        tool_call_chunks=[
+                                            tool_call_chunk(
+                                                name=block.name[len(_TOOL_PREFIX) :],
+                                                args=json.dumps(block.input),
+                                                id=block.id,
+                                                index=tool_calls_emitted,
+                                            )
+                                        ],
+                                    )
+                                )
+                                tool_calls_emitted += 1
                         if has_text:
                             text_deltas = 0
                         if has_thinking:
@@ -428,6 +526,8 @@ class ClaudeCodeChatModel(BaseChatModel):
             response_metadata.update(MessageConverter.extract_usage_metadata(result))
         if stop_filter.triggered:
             response_metadata["stop_reason"] = "stop_sequence"
+        elif tool_calls_emitted:
+            response_metadata["stop_reason"] = "tool_use"  # CLI reports "tool_deferred"
         response_metadata["model_name"] = model_name
 
         usage = MessageConverter.to_usage_metadata(getattr(result, "usage", None))
@@ -479,6 +579,8 @@ class ClaudeCodeChatModel(BaseChatModel):
             additional_kwargs=aggregate.additional_kwargs,
             response_metadata=aggregate.response_metadata,
             usage_metadata=aggregate.usage_metadata,
+            tool_calls=aggregate.tool_calls,
+            invalid_tool_calls=aggregate.invalid_tool_calls,
         )
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -637,6 +739,46 @@ class ClaudeCodeChatModel(BaseChatModel):
         if ls_stop:
             params["ls_stop"] = ls_stop
         return params
+
+
+async def _defer_langchain_tool(input_data: Any, tool_use_id: Any, context: Any) -> Any:
+    """PreToolUse hook: stop the run and hand the tool call back to the caller."""
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "defer"}}
+
+
+def _deferred_tool_server(tools: List[Dict[str, Any]]) -> Any:
+    """
+    Expose OpenAI-format tool schemas to Claude as native tools.
+
+    The handlers never run: the PreToolUse hook defers every call, so tool execution
+    stays with the LangChain application.
+    """
+
+    async def not_executed(args: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "content": [{"type": "text", "text": "Tool execution is handled by LangChain."}],
+            "is_error": True,
+        }
+
+    sdk_tools = [
+        SdkMcpTool(
+            name=t["function"]["name"],
+            description=t["function"].get("description") or t["function"]["name"],
+            input_schema=t["function"].get("parameters") or {"type": "object", "properties": {}},
+            handler=not_executed,
+        )
+        for t in tools
+    ]
+    return create_sdk_mcp_server(name=_TOOL_SERVER, tools=sdk_tools)
+
+
+def _tool_choice_instruction(tool_choice: Any) -> Optional[str]:
+    """Best-effort emulation of ``tool_choice`` (the CLI has no native equivalent)."""
+    if tool_choice in (None, "auto", False, "none"):
+        return None
+    if tool_choice in ("any", "required", True):
+        return "You must respond by calling one or more of the available tools."
+    return f"You must respond by calling the `{tool_choice}` tool."
 
 
 def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:

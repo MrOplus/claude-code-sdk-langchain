@@ -136,9 +136,10 @@ def test_multi_turn_history_is_rendered_as_transcript(fake_claude):
         ]
     )
 
-    assert fake_claude.instances[0].prompts == [
-        "Human: My name is Alice\n\nAssistant: Nice to meet you, Alice!\n\nHuman: What is my name?"
-    ]
+    prompt = fake_claude.instances[0].prompts[0]
+    assert prompt.startswith("<conversation_history>\n<user>\nMy name is Alice\n</user>")
+    assert "<assistant>\nNice to meet you, Alice!\n</assistant>" in prompt
+    assert prompt.endswith("</conversation_history>\n\nReply to the latest user message.")
 
 
 def test_images_are_dropped_with_warning(fake_claude, caplog):

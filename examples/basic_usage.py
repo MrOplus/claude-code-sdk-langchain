@@ -9,10 +9,12 @@ Run with:  python examples/basic_usage.py
 
 import asyncio
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
+from langchain_core.tools import tool
+from pydantic import BaseModel
 
 from claude_code_langchain import ClaudeCodeChatModel
 
@@ -172,6 +174,51 @@ def example_stop_sequences():
     )
 
 
+def example_tool_calling():
+    """Example 10: tool calling loop (the adapter never executes tools itself)"""
+    print("\n🛠️ Example 10: Tool Calling")
+    print("-" * 40)
+
+    @tool
+    def get_weather(city: str) -> str:
+        """Get the current weather for a city."""
+        return {"paris": "18C, light rain", "tokyo": "26C, sunny"}.get(city.lower(), "unknown")
+
+    model = ClaudeCodeChatModel(model=MODEL).bind_tools([get_weather])
+    messages = [HumanMessage(content="Compare the weather in Paris and Tokyo.")]
+
+    while True:
+        ai = model.invoke(messages)
+        messages.append(ai)
+        if not ai.tool_calls:
+            break
+        for call in ai.tool_calls:
+            print(f"  -> {call['name']}({call['args']})")
+            messages.append(ToolMessage(get_weather.invoke(call["args"]), tool_call_id=call["id"]))
+
+    print(f"Answer: {ai.content}")
+
+
+def example_structured_output():
+    """Example 11: structured output with a Pydantic model"""
+    print("\n🧾 Example 11: Structured Output")
+    print("-" * 40)
+
+    class Person(BaseModel):
+        """Information about a person."""
+
+        name: str
+        age: int
+        languages: list[str]
+
+    person = (
+        ClaudeCodeChatModel(model=MODEL)
+        .with_structured_output(Person)
+        .invoke("Maria Lopez is 34 and speaks Spanish, English and French.")
+    )
+    print(f"Parsed: {person!r}")
+
+
 def main():
     print("=" * 50)
     print("🚀 ClaudeCodeChatModel Examples for LangChain")
@@ -187,6 +234,8 @@ def main():
     asyncio.run(example_async_operations())
     example_conversation_history()
     example_stop_sequences()
+    example_tool_calling()
+    example_structured_output()
 
     print("\n" + "=" * 50)
     print("✅ All examples completed!")

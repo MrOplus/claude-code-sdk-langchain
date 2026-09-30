@@ -11,11 +11,11 @@ Created: 2025-09-29
 Modified: 2026-09-30
 
 ### claude_code_langchain/chat_model.py
-Description: ClaudeCodeChatModel - ClaudeSDKClient lifecycle (interrupt/disconnect on early exit), token-level streaming, stop sequence emulation, usage metadata, anyio isolation, timeouts
+Description: ClaudeCodeChatModel - ClaudeSDKClient lifecycle (interrupt/disconnect on early exit), token-level streaming, tool calling via deferred in-process MCP tools, stop sequence emulation, usage metadata, anyio isolation, timeouts
 Created: 2025-09-29
 Modified: 2026-09-30
 
 ### claude_code_langchain/message_converter.py
-Description: LangChain messages to system prompt + user prompt, multimodal text extraction, usage/response metadata conversion
+Description: LangChain messages to system prompt + user prompt (structured conversation history incl. tool calls/results), multimodal text extraction, usage/response metadata conversion
 Created: 2025-09-29
 Modified: 2026-09-30

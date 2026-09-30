@@ -16,7 +16,7 @@ Created: 2026-09-30
 Modified: 2026-09-30
 
 ## fake_sdk.py
-Description: Scripted ClaudeSDKClient stand-in and builders for real SDK message types (offline flows)
+Description: Scripted ClaudeSDKClient stand-in and builders for real SDK message types, including tool use (offline flows)
 Created: 2026-09-30
 Modified: 2026-09-30
 
@@ -43,6 +43,11 @@ Modified: 2026-09-30
 ## flow_error_handling.md + flow_error_handling_test.py
 Description: [offline] Error handling - missing SDK/CLI, process/JSON/connection errors, error results, recovery, invalid input
 Created: 2025-09-30
+Modified: 2026-09-30
+
+## flow_tool_calling.md + flow_tool_calling_offline_test.py + flow_tool_calling_test.py
+Description: [offline + live] Tool calling - bind_tools, parallel calls, tool loop, tool_choice, with_structured_output, create_agent
+Created: 2026-09-30
 Modified: 2026-09-30
 
 ## flow_offline_behavior.md + flow_offline_behavior_test.py

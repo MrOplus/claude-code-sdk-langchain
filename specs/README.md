@@ -13,8 +13,8 @@ This directory holds pragmatic flow tests written for an LLM-first development a
 
 | Kind | Marker | Needs CLI / subscription | Speed |
 |------|--------|--------------------------|-------|
-| **Offline** | *(none)* | No | ~1 s for the whole suite |
-| **Live** | `live` | Yes | ~2 min with `haiku` |
+| **Offline** | *(none)* | No | ~1 s for the whole suite (51 tests) |
+| **Live** | `live` | Yes | ~3 min with `haiku` (24 tests) |
 
 **Offline flows** replace only the SDK client boundary with `fake_sdk.FakeClaudeSDKClient`,
 a scripted client that yields **real** SDK message types (`StreamEvent`, `AssistantMessage`,
@@ -40,6 +40,8 @@ Each flow has two parts:
 | Streaming | `flow_streaming.md` | `flow_streaming_test.py` | Live |
 | Error handling | `flow_error_handling.md` | `flow_error_handling_test.py` | Offline |
 | Adapter behavior | `flow_offline_behavior.md` | `flow_offline_behavior_test.py` | Offline |
+| Tool calling | `flow_tool_calling.md` | `flow_tool_calling_offline_test.py` | Offline |
+| Tool calling | `flow_tool_calling.md` | `flow_tool_calling_test.py` | Live |
 
 Supporting files: `conftest.py` (the `fake_claude` fixture and live-test skipping),
 `fake_sdk.py` (the scripted client and message builders), and `test_helpers.py`
