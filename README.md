@@ -250,7 +250,10 @@ Without pixi: `pip install -e ".[dev]"`, then run `pytest specs -m "not live"`. 
 
 ## 📝 Examples
 
-[`examples/basic_usage.py`](examples/basic_usage.py) covers invocation, system prompts, streaming, chains, async, batch, routing, multi-turn history, stop sequences, tool calling and structured output.
+- [`examples/basic_usage.py`](examples/basic_usage.py): invocation, system prompts, streaming, chains, batch, routing, multi-turn history, stop sequences, tool calling and structured output (`pixi run examples`).
+- [`examples/async_usage.py`](examples/async_usage.py): `ainvoke`, `astream`, concurrent requests, async chains, an async tool loop with concurrent tool execution, async structured output, an async agent, timeouts and cancellation (`pixi run examples-async`).
+
+Each request runs in its own CLI process, so with asyncio, independent requests really run in parallel: three requests take about as long as one.
 
 ## 🤝 Contributing
 

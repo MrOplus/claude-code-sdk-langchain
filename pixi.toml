@@ -31,6 +31,7 @@ test-offline = "pytest specs/ -v -m 'not live'"
 test-live = "pytest specs/ -v -m live"
 smoke = "python scripts/smoke_test.py"
 examples = "python examples/basic_usage.py"
+examples-async = "python examples/async_usage.py"
 
 # Code quality
 lint = "ruff check src/ specs/ scripts/ examples/"
