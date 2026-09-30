@@ -20,6 +20,5 @@ recursive-exclude .ruff_cache *
 # Exclude test files from distribution
 recursive-exclude specs *
 recursive-exclude scripts *
-exclude test_simple.py
 exclude pixi.toml
 exclude pixi.lock

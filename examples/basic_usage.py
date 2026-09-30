@@ -1,271 +1,198 @@
 """
-Exemple d'utilisation de ClaudeCodeChatModel avec LangChain
+Usage examples for ClaudeCodeChatModel with LangChain.
 
-Ce script montre comment utiliser Claude via votre abonnement Claude Code
-pour prototyper des applications LangChain SANS frais API supplémentaires.
+Shows how to use Claude through your Claude Code subscription to prototype
+LangChain applications WITHOUT per-token API charges.
+
+Run with:  python examples/basic_usage.py
 """
 
 import asyncio
-from langchain_core.prompts import ChatPromptTemplate
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda
 
-# Import de notre adaptateur
 from claude_code_langchain import ClaudeCodeChatModel
+
+MODEL = "haiku"  # fast and light on quota; use "sonnet" or "opus" for harder tasks
 
 
 def example_simple_invocation():
-    """Exemple 1: Invocation simple du modèle"""
-    print("\n📝 Exemple 1: Invocation Simple")
+    """Example 1: simple invocation with usage metadata"""
+    print("\n📝 Example 1: Simple Invocation")
     print("-" * 40)
 
-    # Créer le modèle (utilise votre abonnement Claude Code)
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.7,
-        max_tokens=500
-    )
+    model = ClaudeCodeChatModel(model=MODEL)
+    response = model.invoke("What is LangChain, in 2 sentences?")
 
-    # Envoyer un message simple
-    response = model.invoke([
-        HumanMessage(content="Qu'est-ce que LangChain en 2 phrases?")
-    ])
-
-    print(f"Réponse: {response.content}")
+    print(f"Response: {response.content}")
+    print(f"Model:    {response.response_metadata['model_name']}")
+    print(f"Tokens:   {response.usage_metadata}")
 
 
 def example_with_system_prompt():
-    """Exemple 2: Utilisation avec prompt système"""
-    print("\n🎯 Exemple 2: Avec Prompt Système")
+    """Example 2: system prompts"""
+    print("\n🎯 Example 2: System Prompt")
     print("-" * 40)
 
-    # Modèle avec configuration système
     model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        system_prompt="Tu es un expert Python qui répond de manière très concise.",
-        temperature=0.3,
-        max_tokens=200
+        model=MODEL,
+        system_prompt="You are a Python expert who answers very concisely.",
     )
 
-    # Messages avec contexte système
+    # A SystemMessage in the input takes precedence over the constructor prompt
     messages = [
-        SystemMessage(content="Utilise des exemples de code quand c'est pertinent"),
-        HumanMessage(content="Comment créer une liste en Python?")
+        SystemMessage(content="Include a short code example when relevant."),
+        HumanMessage(content="How do I create a list in Python?"),
     ]
-
-    response = model.invoke(messages)
-    print(f"Réponse: {response.content}")
+    print(f"Response: {model.invoke(messages).content}")
 
 
 def example_streaming():
-    """Exemple 3: Streaming de réponses"""
-    print("\n🌊 Exemple 3: Streaming")
+    """Example 3: token-by-token streaming"""
+    print("\n🌊 Example 3: Streaming")
     print("-" * 40)
 
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.8
-    )
+    model = ClaudeCodeChatModel(model=MODEL)
 
-    print("Streaming de la réponse: ", end="")
-    for chunk in model.stream([
-        HumanMessage(content="Raconte une très courte histoire sur un robot")
-    ]):
+    print("Streaming: ", end="")
+    for chunk in model.stream("Tell a very short story about a robot."):
         print(chunk.content, end="", flush=True)
-    print()  # Nouvelle ligne à la fin
+    print()
 
 
 def example_langchain_chain():
-    """Exemple 4: Chaîne LangChain complète"""
-    print("\n🔗 Exemple 4: Chaîne LangChain")
+    """Example 4: LCEL chain"""
+    print("\n🔗 Example 4: LangChain Chain")
     print("-" * 40)
 
-    # Créer les composants de la chaîne
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.5
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", "You are an expert assistant in {domain}."), ("human", "{question}")]
     )
+    chain = prompt | ClaudeCodeChatModel(model=MODEL) | StrOutputParser()
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "Tu es un assistant expert en {domain}"),
-        ("human", "{question}")
-    ])
-
-    # Construire la chaîne avec LCEL
-    chain = prompt | model | StrOutputParser()
-
-    # Invoquer la chaîne
-    response = chain.invoke({
-        "domain": "intelligence artificielle",
-        "question": "Qu'est-ce qu'un réseau de neurones?"
-    })
-
-    print(f"Réponse: {response}")
+    response = chain.invoke(
+        {"domain": "artificial intelligence", "question": "What is a neural network?"}
+    )
+    print(f"Response: {response}")
 
 
 async def example_async_operations():
-    """Exemple 5: Opérations asynchrones"""
-    print("\n⚡ Exemple 5: Opérations Asynchrones")
+    """Example 5: async invocation and streaming"""
+    print("\n⚡ Example 5: Async Operations")
     print("-" * 40)
 
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.6
-    )
+    model = ClaudeCodeChatModel(model=MODEL)
 
-    # Invocation asynchrone
-    response = await model.ainvoke([
-        HumanMessage(content="Qu'est-ce que Python async/await?")
-    ])
+    response = await model.ainvoke("What is Python async/await? One paragraph.")
+    print(f"Async response: {response.content[:200]}...")
 
-    print(f"Réponse async: {response.content[:200]}...")
-
-    # Streaming asynchrone
-    print("\nStreaming async: ", end="")
-    async for chunk in model.astream([
-        HumanMessage(content="Liste 3 avantages de l'async")
-    ]):
-        print(".", end="", flush=True)
-    print(" Terminé!")
+    print("\nAsync streaming: ", end="")
+    async for chunk in model.astream("List 3 advantages of async programming."):
+        print(chunk.content, end="", flush=True)
+    print()
 
 
 def example_batch_processing():
-    """Exemple 6: Traitement par batch"""
-    print("\n📦 Exemple 6: Traitement Batch")
+    """Example 6: batch processing"""
+    print("\n📦 Example 6: Batch Processing")
     print("-" * 40)
 
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.4,
-        max_tokens=100
-    )
-
-    # Plusieurs questions en batch
+    model = ClaudeCodeChatModel(model=MODEL)
     questions = [
-        [HumanMessage(content="Capitale de la France?")],
-        [HumanMessage(content="Capitale de l'Espagne?")],
-        [HumanMessage(content="Capitale de l'Italie?")]
+        "Capital of France? One word.",
+        "Capital of Spain? One word.",
+        "Capital of Italy? One word.",
     ]
 
-    responses = model.batch(questions)
-
-    for i, response in enumerate(responses, 1):
-        print(f"Question {i}: {response.content}")
+    for question, response in zip(questions, model.batch(questions)):
+        print(f"{question} -> {response.content}")
 
 
-def example_complex_agent_chain():
-    """Exemple 7: Chaîne d'agent complexe"""
-    print("\n🤖 Exemple 7: Chaîne Complexe (Agent-like)")
+def example_routing_chain():
+    """Example 7: two-step chain that routes on a classification"""
+    print("\n🤖 Example 7: Routing Chain")
     print("-" * 40)
 
-    from langchain_core.runnables import RunnablePassthrough
+    model = ClaudeCodeChatModel(model=MODEL)
 
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.5
-    )
-
-    # Première étape: Analyser l'intention
-    intent_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Détermine si la question est technique ou générale"),
-        ("human", "{question}")
-    ])
-
-    # Deuxième étape: Répondre selon l'intention
-    response_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Réponds à cette question {intent}"),
-        ("human", "{question}")
-    ])
-
-    # Chaîne d'analyse d'intention
-    intent_chain = intent_prompt | model | StrOutputParser()
-
-    # Chaîne complète avec routing
-    def route_response(inputs):
-        intent = intent_chain.invoke({"question": inputs["question"]})
-        return {
-            "intent": "de manière technique" if "technique" in intent.lower() else "simplement",
-            "question": inputs["question"]
-        }
-
-    full_chain = (
-        RunnablePassthrough()
-        | route_response
-        | response_prompt
+    classify = (
+        ChatPromptTemplate.from_messages(
+            [
+                ("system", "Answer with exactly one word: technical or general."),
+                ("human", "{question}"),
+            ]
+        )
         | model
         | StrOutputParser()
     )
 
-    response = full_chain.invoke({
-        "question": "Comment fonctionne une API REST?"
-    })
-
-    print(f"Réponse adaptée: {response[:200]}...")
-
-
-def example_continuous_session():
-    """Exemple 8: Conversation multi-tour (gestion manuelle du contexte)"""
-    print("\n💭 Exemple 8: Conversation Multi-Tour")
-    print("-" * 40)
-
-    # ClaudeCodeChatModel est STATELESS par design (compatible LangChain)
-    # Pour maintenir le contexte, passer explicitement l'historique
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        temperature=0.6
+    answer = ChatPromptTemplate.from_messages(
+        [("system", "Answer this question {style}."), ("human", "{question}")]
     )
 
-    print("Note: Le modèle est stateless (recommandé pour LangChain)")
-    print("Le contexte est géré en passant l'historique explicitement")
+    def route(inputs: dict) -> dict:
+        kind = classify.invoke({"question": inputs["question"]})
+        style = "in technical depth" if "technical" in kind.lower() else "in simple terms"
+        return {"style": style, "question": inputs["question"]}
 
-    # Construire l'historique manuellement
-    conversation = []
+    chain = RunnableLambda(route) | answer | model | StrOutputParser()
+    response = chain.invoke({"question": "How does a REST API work?"})
+    print(f"Adapted response: {response[:300]}...")
 
-    # Première interaction
-    conversation.append(HumanMessage(content="Je m'appelle Alice"))
-    response1 = model.invoke(conversation)
-    print(f"R1: {response1.content}")
 
-    # Ajouter la réponse à l'historique
-    conversation.append(response1)
+def example_conversation_history():
+    """Example 8: multi-turn conversation (stateless model, explicit history)"""
+    print("\n💭 Example 8: Multi-Turn Conversation")
+    print("-" * 40)
 
-    # Deuxième interaction avec contexte
-    conversation.append(HumanMessage(content="Quel est mon nom?"))
-    response2 = model.invoke(conversation)
-    print(f"R2: {response2.content}")
-    print("\nContexte maintenu via historique explicite ✓")
+    # ClaudeCodeChatModel is stateless, like every LangChain chat model:
+    # conversation context is carried by the messages you pass in.
+    model = ClaudeCodeChatModel(model=MODEL)
+    conversation = [HumanMessage(content="My name is Alice.")]
+
+    reply = model.invoke(conversation)
+    print(f"R1: {reply.content}")
+
+    conversation += [reply, HumanMessage(content="What is my name?")]
+    print(f"R2: {model.invoke(conversation).content}")
+
+
+def example_stop_sequences():
+    """Example 9: stop sequences (emulated client-side)"""
+    print("\n✋ Example 9: Stop Sequences")
+    print("-" * 40)
+
+    model = ClaudeCodeChatModel(model=MODEL)
+    response = model.invoke("Count from 1 to 10 separated by spaces.", stop=["6"])
+    print(
+        f"Truncated: {response.content!r} (stop_reason={response.response_metadata['stop_reason']})"
+    )
 
 
 def main():
-    """Fonction principale pour exécuter tous les exemples"""
     print("=" * 50)
-    print("🚀 Exemples ClaudeCodeChatModel pour LangChain")
+    print("🚀 ClaudeCodeChatModel Examples for LangChain")
     print("=" * 50)
-    print("\nUtilise votre abonnement Claude Code (20$/mois)")
-    print("AUCUN frais API supplémentaire!")
+    print("\nUses your Claude Code subscription - no per-token API charges.")
 
-    # Exécuter les exemples synchrones
     example_simple_invocation()
     example_with_system_prompt()
     example_streaming()
     example_langchain_chain()
     example_batch_processing()
-    example_complex_agent_chain()
-
-    # Exécuter les exemples asynchrones
-    print("\n" + "=" * 50)
-    print("Exemples Asynchrones")
-    print("=" * 50)
+    example_routing_chain()
     asyncio.run(example_async_operations())
-
-    # Session continue (optionnel)
-    example_continuous_session()
+    example_conversation_history()
+    example_stop_sequences()
 
     print("\n" + "=" * 50)
-    print("✅ Tous les exemples exécutés avec succès!")
+    print("✅ All examples completed!")
     print("=" * 50)
-    print("\n💡 Astuce: Remplacez ClaudeCodeChatModel par ChatAnthropic")
-    print("   quand vous serez prêt pour la production avec l'API officielle!")
+    print("\n💡 Tip: swap ClaudeCodeChatModel for ChatAnthropic when you are")
+    print("   ready for production with the official API.")
 
 
 if __name__ == "__main__":

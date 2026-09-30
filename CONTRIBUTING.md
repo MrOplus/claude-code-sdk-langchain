@@ -16,12 +16,15 @@ claude-code-sdk-langchain/
 ├── specs/                  # Pragmatic flow tests
 │   ├── flow_*.md           # Flow descriptions
 │   ├── flow_*_test.py      # Flow test implementations
+│   ├── fake_sdk.py         # Scripted SDK client for offline flows
+│   ├── conftest.py         # Fixtures and live-test skipping
 │   ├── README.md           # Testing philosophy
 │   └── __INDEX.md          # Directory index
 ├── docs/                   # Technical documentation
 │   └── __INDEX.md          # Directory index
 ├── examples/               # Usage examples
-├── scripts/                # Automation scripts
+│   └── __INDEX.md          # Directory index
+├── scripts/                # Automation scripts (deploy, smoke test)
 │   └── __INDEX.md          # Directory index
 ├── data/                   # Production data
 │   └── __INDEX.md          # Directory index
@@ -68,7 +71,8 @@ This project uses **Pragmatic Flow Testing** - a testing approach optimized for 
 2. **Focus on User Journeys**
    - Each test represents a real user flow
    - End-to-end testing from user perspective
-   - No mocking or artificial isolation
+   - The only test double is the SDK client boundary (`specs/fake_sdk.py`), which
+     uses real SDK message types - nothing inside the adapter is mocked
 
 3. **LLM as Unit Test**
    - LLMs naturally validate logic during code generation
@@ -76,9 +80,18 @@ This project uses **Pragmatic Flow Testing** - a testing approach optimized for 
    - Reduces test maintenance overhead by 80%
 
 4. **Environmental Isolation via Pixi**
-   - Reproducible environments without mocking
-   - Deterministic test execution
+   - Reproducible environments
+   - Deterministic offline flows, plus live flows against the real CLI
    - Real dependencies, isolated context
+
+### Offline vs. Live Flows
+
+| Kind | Marker | Needs CLI | Purpose |
+|------|--------|-----------|---------|
+| Offline | none | No | Deterministic behavior: conversion, streaming, stop sequences, errors, cleanup |
+| Live | `@pytest.mark.live` | Yes | Proves the adapter works against the real Claude Code CLI |
+
+Live tests are skipped automatically when `claude` is not on PATH or `CLAUDE_SKIP_LIVE=1`.
 
 ### Test Structure
 
@@ -94,18 +107,28 @@ Each flow has two components:
    - Tests ONLY through public APIs
    - Can be run independently
 
-**Example:**
+**Example (offline):**
 ```python
-# specs/flow_basic_chat_test.py
-"""Test basic chat flow (see flow_basic_chat.md)"""
+from claude_code_langchain import ClaudeCodeChatModel
+from .fake_sdk import streamed_reply
+
+def test_stop_sequence(fake_claude):
+    fake_claude.script = streamed_reply("1 2 3 ", "4 5 6")
+    response = ClaudeCodeChatModel().invoke("Count", stop=["5"])  # Public API
+    assert response.content == "1 2 3 4 "                           # Behavior
+```
+
+**Example (live):**
+```python
+import pytest
+from claude_code_langchain import ClaudeCodeChatModel
+from .test_helpers import get_test_model_name
+
+pytestmark = pytest.mark.live
 
 def test_basic_invocation():
-    from claude_code_langchain import ClaudeCodeChatModel  # Public API
-
-    model = ClaudeCodeChatModel(model="claude-sonnet-4-20250514")
-    response = model.invoke("What is LangChain?")  # Public method
-
-    assert len(response.content) > 0  # Behavioral validation
+    model = ClaudeCodeChatModel(model=get_test_model_name())
+    assert model.invoke("What is LangChain?").content.strip()
 ```
 
 ### What to Test
@@ -126,14 +149,13 @@ def test_basic_invocation():
 ### Running Tests
 
 ```bash
-# All flow tests
-pytest specs/
+pixi run test-offline        # offline flows only (fast, no CLI)
+pixi run test-live           # live flows (real CLI, CLAUDE_TEST_MODEL=haiku by default)
+pixi run test                # everything
 
-# Specific flow
+# Without pixi
+pytest specs -m "not live"
 python specs/flow_basic_chat_test.py
-
-# With Pixi
-pixi run pytest specs/
 ```
 
 ## Development Workflow
@@ -142,7 +164,7 @@ pixi run pytest specs/
 
 ```bash
 # Clone repository
-git clone https://github.com/kapp667/claude-code-sdk-langchain.git
+git clone https://github.com/MrOplus/claude-code-sdk-langchain.git
 cd claude-code-sdk-langchain
 
 # Enter Pixi environment (installs everything automatically)
@@ -164,9 +186,10 @@ python -c "from claude_code_langchain import ClaudeCodeChatModel; print('✅ Set
    - Update __INDEX.md if adding/modifying files
    - Add/update flow tests if changing behavior
 
-3. **Run tests**
+3. **Run checks and tests**
    ```bash
-   pixi run pytest specs/
+   pixi run check
+   pixi run test
    ```
 
 4. **Update CHANGELOG.md**
@@ -183,7 +206,7 @@ python -c "from claude_code_langchain import ClaudeCodeChatModel; print('✅ Set
 
 - **Comments:** English only
 - **Docstrings:** Use for public APIs
-- **Type hints:** Encouraged but not required
+- **Type hints:** Required for public APIs (`pixi run typecheck`)
 
 ### 4. Documentation
 
@@ -232,13 +255,16 @@ git commit -m "feat(streaming): add support for async streaming with parsers"
 
 ## Project-Specific Notes
 
-### Critical Model Name
+### Model Names
 
-Always use `claude-sonnet-4-20250514` as the default model. This has been explicitly confirmed and must not regress to 3.5 or Opus.
+The default model is the `sonnet` alias, which the CLI resolves to the latest Sonnet model.
+Prefer aliases (`haiku`, `sonnet`, `opus`) over dated model IDs: dated IDs are retired over
+time and then fail with "There's an issue with the selected model". Live tests use `haiku`
+via `CLAUDE_TEST_MODEL`. See `docs/IMPORTANT_MODEL_NOTE.md`.
 
 ### Behavioral Neutrality
 
-The adapter aims for ~95% behavioral neutrality with the production Anthropic API. When adding features:
+The adapter aims to behave like `ChatAnthropic` so switching to production is a one-line change. When adding features:
 - Document any deviations from ChatAnthropic behavior
 - Emit warnings for unsupported features
 - Maintain API compatibility even if features don't work
@@ -246,13 +272,12 @@ The adapter aims for ~95% behavioral neutrality with the production Anthropic AP
 ### Local-Only Files
 
 These files are excluded from the public repository:
-- `CLAUDE.md` - Internal guidance
-- `IMPORTANT_MODEL_NOTE.md` - Critical model name documentation
+- `CLAUDE.md` - Internal guidance for Claude Code instances
 - `tmp/` - Temporary files
 
 ## Getting Help
 
-- **Issues:** https://github.com/kapp667/claude-code-sdk-langchain/issues
+- **Issues:** https://github.com/MrOplus/claude-code-sdk-langchain/issues
 - **Discussions:** Use GitHub Discussions for questions
 - **Documentation:** See README.md and docs/
 

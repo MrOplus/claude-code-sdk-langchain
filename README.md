@@ -2,52 +2,45 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![LangChain](https://img.shields.io/badge/LangChain-compatible-green.svg)](https://github.com/langchain-ai/langchain)
-[![Status](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/kapp667/claude-code-sdk-langchain)
+[![LangChain](https://img.shields.io/badge/LangChain-1.x-green.svg)](https://github.com/langchain-ai/langchain)
+[![Status](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/MrOplus/claude-code-sdk-langchain)
 
-Use Claude via your Claude Code subscription ($20/month) as an LLM model in LangChain to prototype agentic applications **WITHOUT additional API fees**!
+Use Claude through your **Claude Code subscription** as a LangChain chat model, so you can prototype agentic applications **without per-token API charges**.
 
-## 🎯 Purpose
+`ClaudeCodeChatModel` is a regular LangChain `BaseChatModel`. It works with `invoke`, `stream`, `batch`, their async versions, LCEL chains and output parsers. Requests run through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/) and the Claude Code CLI. When you're ready for production, swap in `ChatAnthropic` by changing one line.
 
-This adapter allows you to use your existing Claude Code subscription as a backend for LangChain, enabling you to:
-- ✅ Prototype LangChain applications for free (via your subscription)
+## 🎯 Why
+
+- ✅ Prototype LangChain apps on your existing subscription
 - ✅ Test agent ideas without worrying about API costs
-- ✅ Easily migrate to the official API in production
+- ✅ Move to the official API later by changing one line
 
 ## 📦 Installation
 
-### Via GitHub (Recommended)
+### Prerequisites
+
+The **Claude Code CLI** must be installed and logged in:
 
 ```bash
-# Latest version from main branch
-pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git
+npm install -g @anthropic-ai/claude-code
+claude   # log in once with your subscription
+```
+
+### Via GitHub
+
+```bash
+# Latest version from main
+pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git
 
 # Specific version tag
-pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git@v0.1.0
+pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v0.2.0
 ```
 
 ### Via Pixi
 
-```bash
-# In your pixi.toml
+```toml
 [pypi-dependencies]
-claude-code-langchain = { git = "https://github.com/kapp667/claude-code-sdk-langchain.git" }
-
-# Or specific version
-claude-code-langchain = { git = "https://github.com/kapp667/claude-code-sdk-langchain.git", tag = "v0.1.0" }
-```
-
-### Via GitHub Release (Manual)
-
-1. Download wheel from [Releases](https://github.com/kapp667/claude-code-sdk-langchain/releases)
-2. Install: `pip install claude_code_langchain-0.1.0-py3-none-any.whl`
-
-### Prerequisites
-
-The **Claude Code CLI** must be installed and configured:
-
-```bash
-npm install -g @anthropic-ai/claude-code
+claude-code-langchain = { git = "https://github.com/MrOplus/claude-code-sdk-langchain.git", tag = "v0.2.0" }
 ```
 
 ## 🚀 Quick Start
@@ -56,256 +49,156 @@ npm install -g @anthropic-ai/claude-code
 from claude_code_langchain import ClaudeCodeChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
-# Create the model (uses your Claude Code subscription)
-model = ClaudeCodeChatModel(
-    model="claude-sonnet-4-20250514",
-    temperature=0.7
-)
+model = ClaudeCodeChatModel(model="sonnet")   # "haiku", "sonnet", "opus" or a full model ID
 
-# Simple usage
 response = model.invoke("What is LangChain?")
 print(response.content)
+print(response.usage_metadata)                 # {'input_tokens': ..., 'output_tokens': ..., ...}
 
-# In a LangChain chain
 prompt = ChatPromptTemplate.from_messages([
     ("system", "You are an expert in {domain}"),
-    ("human", "{question}")
+    ("human", "{question}"),
 ])
-
 chain = prompt | model
-result = chain.invoke({
-    "domain": "Python",
-    "question": "How to create a REST API?"
-})
+result = chain.invoke({"domain": "Python", "question": "How do I create a REST API?"})
 ```
 
 ## 🔄 Streaming
 
+Streaming is **token-by-token**, not block-by-block:
+
 ```python
-# Response streaming
 for chunk in model.stream("Tell me a story"):
-    print(chunk.content, end="")
+    print(chunk.content, end="", flush=True)
 
-# Async streaming
 async for chunk in model.astream("List 5 ideas"):
-    print(chunk.content, end="")
+    print(chunk.content, end="", flush=True)
 ```
 
-## 🔗 Full LangChain Integration
+If you stop iterating early, the CLI request is interrupted, so an abandoned stream doesn't keep generating and using your quota.
 
-The adapter supports all LangChain features:
-- ✅ Synchronous/asynchronous invocation
-- ✅ Streaming
-- ✅ Batch processing
-- ✅ LCEL (LangChain Expression Language) integration
-- ✅ Chains and agents
+## 🔒 Isolation by Default
 
-## 📝 Examples
+A plain `ClaudeCodeChatModel()` behaves like a chat API, not like a coding agent:
 
-See the `examples/` folder for complete examples:
-- `basic_usage.py` - Various usage examples
-- Tests in `specs/` - Pragmatic flow tests
+- **No tools**: Claude Code's built-in tools are disabled, and so are MCP servers, including
+  claude.ai account connectors such as Gmail or Drive. Without this, connector tool
+  definitions add thousands of input tokens to every request and change the model's answers.
+- **No local settings**: `CLAUDE.md` files, hooks and permission settings aren't loaded.
+- **No transcripts**: sessions aren't saved under `~/.claude`.
 
-## 🧪 Tests
-
-```bash
-# Run flow tests
-python specs/flow_basic_chat_test.py
-python specs/flow_langchain_integration_test.py
-
-# Or with pytest
-pytest specs/
-```
-
-## 🔄 Migration to Production
-
-When you're ready for production, simply replace:
-
-```python
-# Development (your subscription)
-from claude_code_langchain import ClaudeCodeChatModel
-model = ClaudeCodeChatModel(model="claude-sonnet-4-20250514")
-
-# Production (official API)
-from langchain_anthropic import ChatAnthropic
-model = ChatAnthropic(model="claude-3-opus-20240229", api_key="sk-...")
-```
-
-The rest of your code remains identical!
+Each of these can be turned back on with `builtin_tools`, `mcp_servers` / `strict_mcp_config`,
+`setting_sources` and `persist_session`.
 
 ## ⚙️ Configuration
 
 ```python
 model = ClaudeCodeChatModel(
-    model="claude-sonnet-4-20250514",     # Claude Sonnet 4 model
-    temperature=0.7,                      # ⚠️ NOT SUPPORTED (value ignored)
-    max_tokens=2000,                      # ⚠️ NOT SUPPORTED (value ignored)
-    system_prompt="You are an expert...", # System prompt
-    permission_mode="default",            # Claude Code permission mode
+    model="sonnet",                    # alias or full model ID (default: "sonnet")
+    system_prompt="You are an expert", # default system prompt (a SystemMessage overrides it)
+    stop=["\n\n"],                     # default stop sequences (emulated client-side)
+    effort="medium",                   # reasoning effort: low | medium | high | xhigh | max
+    timeout=120,                       # seconds per request (raises ClaudeCodeTimeoutError)
+
+    # Claude Code specifics - defaults give a plain, isolated chat model
+    builtin_tools=[],                  # built-in tools to enable, e.g. ["WebSearch"]
+    allowed_tools=[],                  # tools that run without a permission prompt
+    max_turns=1,                       # raise this when enabling tools
+    setting_sources=[],                # [] = ignore CLAUDE.md/hooks/settings; None = load all
+    mcp_servers={},                    # MCP servers to attach explicitly
+    strict_mcp_config=True,            # ignore MCP servers from settings and claude.ai connectors
+    persist_session=False,             # don't write session transcripts to ~/.claude
+    permission_mode=None,              # default | acceptEdits | plan | bypassPermissions
+    cwd=None,                          # working directory for the CLI
+    env={},                            # extra environment variables for the CLI
+    cli_path=None,                     # explicit path to the `claude` executable
+
+    # Accepted for ChatAnthropic compatibility, but NOT supported (a warning is logged)
+    temperature=None,
+    max_tokens=None,
 )
 ```
+
+### Response metadata
+
+| Field | Content |
+|-------|---------|
+| `response.usage_metadata` | `input_tokens` (including cache reads/writes, like ChatAnthropic), `output_tokens`, `total_tokens`, cache and reasoning details |
+| `response.response_metadata` | `model_name` (resolved model ID), `stop_reason`, `session_id`, `cost_usd`, `duration_ms`, raw `usage` |
+| `response.additional_kwargs["thinking"]` | The model's thinking text, when present |
+
+## 🔄 Moving to Production
+
+```python
+# Development (your subscription)
+from claude_code_langchain import ClaudeCodeChatModel
+model = ClaudeCodeChatModel(model="sonnet")
+
+# Production (official API)
+from langchain_anthropic import ChatAnthropic
+model = ChatAnthropic(model="claude-sonnet-5-5", api_key="sk-...")
+```
+
+The rest of your code stays the same.
 
 ## 🏗️ Architecture
 
 ```
-LangChain App
+LangChain app
      ↓
-ClaudeCodeChatModel (this adapter)
+ClaudeCodeChatModel      (this adapter: messages → prompt, SDK events → LangChain chunks)
      ↓
-claude-code-sdk (Python SDK)
+claude-agent-sdk         (ClaudeSDKClient, one short-lived session per request)
      ↓
-Claude Code CLI
+Claude Code CLI          (authenticated with your subscription)
      ↓
-Claude (via your subscription)
+Claude
 ```
 
-## ⚠️ Limitations and Warnings
+Each request starts a CLI process. The model is **stateless**, like every LangChain chat model: conversation history is whatever messages you pass in.
 
-This section documents the adapter's known limitations. These limitations are **intentional** - they represent the trade-offs between cost-free prototyping and production API. The adapter emits **runtime warnings** to alert you when using unsupported features.
+## ⚠️ Limitations
 
-### 🌡️ Temperature and Max_Tokens
+These are deliberate trade-offs for free prototyping. Where behavior differs from `ChatAnthropic`, the adapter logs a warning.
 
-**Limitation**: The Claude Code CLI does not support `temperature` and `max_tokens` parameters.
+| Feature | Behavior | Why / workaround |
+|---------|----------|------------------|
+| `temperature` | Ignored, with a warning | The CLI has no sampling controls. Use `ChatAnthropic` if you need them. |
+| `max_tokens` | Ignored, with a warning | The CLI's output limit fails the request instead of truncating it, so it can't be emulated faithfully. |
+| `stop` sequences | Emulated | Output is truncated at the first match and generation is interrupted. `stop_reason` is `"stop_sequence"`. |
+| Images / files | Dropped, with a warning | The CLI prompt channel is text-only. Use `ChatAnthropic` for vision. |
+| Native tool calling (`bind_tools`) | Not supported | Use prompting, or enable Claude Code's own `builtin_tools`. |
+| Multi-turn history | Rendered as a transcript | The CLI takes one user turn per request, so earlier turns are sent as `Human:` / `Assistant:` text. A single human message is sent verbatim. |
+| Latency | Higher than the API | Each request starts a CLI process (about 1–3 s of overhead). |
+| Environment context | ~400 input tokens | The CLI always adds basic environment info (OS, shell, working directory, date) to the context. It can't be turned off when a custom system prompt is used. |
+| Quotas | Your subscription limits | Switch to the API if you hit them. |
 
-**Behavior**:
-- These parameters are **accepted for API compatibility** (prevents breaking your code)
-- They **have no effect** on generation
-- A **warning is emitted** during initialization if you specify non-default values
+### System prompt precedence
 
-**For Development (Claude Code):**
-```python
-model = ClaudeCodeChatModel()  # Uses model's default values
-# ⚠️ temperature=0.7 and max_tokens=2000 will have no effect
+`SystemMessage`s in the input become the real system prompt. If you also set `system_prompt` in the constructor, the message wins and a warning is logged.
+
+### Stopping a stream early
+
+LangChain's `stream()` / `astream()` wrappers don't close the model's generator when you `break`. The adapter's cleanup (interrupting the CLI) runs when that generator is garbage-collected, which in CPython usually happens right away. In a long-running event loop this happens within about a second. If your script exits immediately after abandoning a stream, the SDK's exit handler terminates the CLI process.
+
+## 🧪 Tests
+
+```bash
+pixi run test-offline   # fast, deterministic, no CLI or subscription needed
+pixi run test-live      # real CLI calls (uses CLAUDE_TEST_MODEL, default "haiku")
+pixi run test           # everything
+pixi run smoke          # one-shot end-to-end check
 ```
 
-**For Production (with parameter control):**
-```python
-from langchain_anthropic import ChatAnthropic
-model = ChatAnthropic(
-    temperature=0.7,      # ✅ Works in production
-    max_tokens=1000,      # ✅ Works in production
-    api_key=os.getenv("ANTHROPIC_API_KEY")
-)
-```
+Without pixi: `pip install -e ".[dev]"`, then run `pytest specs -m "not live"`. Live tests are skipped automatically when the `claude` CLI isn't on your PATH, or when `CLAUDE_SKIP_LIVE=1` is set. See [`specs/README.md`](specs/README.md).
 
-**Why?** The Claude Code CLI does not expose `--temperature` or `--max-tokens` flags. Full investigation: [`docs/TEMPERATURE_MAX_TOKENS_INVESTIGATION.md`](docs/TEMPERATURE_MAX_TOKENS_INVESTIGATION.md)
+## 📝 Examples
 
-**Solution**: If you need temperature control or token limits during development, use the production API directly with your Anthropic API key.
-
----
-
-### 🖼️ Vision and Multimodal Content
-
-**Limitation**: Images and other non-text content are not supported.
-
-**Behavior**:
-- Text is extracted and processed
-- Images are **silently ignored**
-- A **warning is emitted** when an image is detected in messages
-
-**Example**:
-```python
-messages = [
-    HumanMessage(content=[
-        {"type": "text", "text": "Describe this image"},
-        {"type": "image_url", "image_url": {"url": "https://..."}}  # ⚠️ Ignored
-    ])
-]
-# Warning: Image content detected but NOT SUPPORTED by Claude Code SDK
-```
-
-**Why?** The Claude Code SDK does not handle multimodal messages via the CLI.
-
-**Solution**: For vision tasks, use `ChatAnthropic` with the production API which natively supports vision.
-
----
-
-### 🔄 Async Support
-
-**Full Support** ✅: The adapter now fully supports asynchronous operations thanks to an anyio isolation fix.
-
-**✅ Sync Operations (100%)**
-- `model.invoke()` - Full support
-- `model.stream()` - Full support
-- `model.batch()` - Full support
-- Chains with sync execution - Full support
-
-**✅ Async Operations (100%)**
-- `model.ainvoke()` - Full support
-- `model.astream()` - Full streaming with anyio isolation
-- `chain.astream()` with parsers - **Full support** (anyio/asyncio fix via queue)
-- Stream cancellation - Supported via break or cancel()
-
-**Tests**: 16/16 functional tests passing (100%) ✅
-
-**Technical note**: A `RuntimeError: cancel scope in different task` issue with LangChain parsers was resolved via a queue isolation pattern. Details: [`CLAUDE.md`](CLAUDE.md#critical-implementation-details)
-
----
-
-### 🔧 System Prompt - Source Conflict
-
-**Limitation**: If you specify a `system_prompt` in the constructor AND a `SystemMessage` in the messages, there is precedence.
-
-**Behavior**:
-- `SystemMessage` in messages **takes precedence**
-- Constructor `system_prompt` is **ignored**
-- A **warning is emitted** if both are present
-
-**Why?** To avoid having two contradictory system prompts and ensure predictable behavior.
-
----
-
-### ⚡ Other Limitations
-
-| Limitation | Impact | Solution |
-|------------|--------|----------|
-| **Tool calls** | No native support | Can be simulated via explicit prompting |
-| **Latency** | +10-30% vs direct API | Acceptable trade-off for prototyping |
-| **CLI Required** | Requires `npm install -g @anthropic-ai/claude-code` | One-time installation |
-| **Quotas** | Limited by your Claude Code subscription | Switch to production API if exceeded |
-
----
-
-### 📊 Behavioral Neutrality
-
-**Overall Score**: ~95%
-
-The adapter maintains **high behavioral neutrality** with the production API:
-- ✅ Messages and formats: 100% compatible
-- ✅ Streaming and async: 100% compatible
-- ⚠️ Sampling parameters: Not supported (temperature, max_tokens)
-- ⚠️ Vision: Not supported
-- ✅ Core behavior: Identical to ChatAnthropic
-
-**Validation**: 3 specialized agents analyzed the implementation. Full report: [`docs/VALIDATION_REPORT_2025-09-30.md`](docs/VALIDATION_REPORT_2025-09-30.md)
-
----
-
-### 💡 Recommendations
-
-**For Prototyping** (this adapter):
-- ✅ Jupyter notebooks
-- ✅ CLI test scripts
-- ✅ Basic and complex LangChain chains
-- ✅ Simple agents
-- ✅ Rapid experimentation
-
-**For Production** (ChatAnthropic):
-- ✅ Applications requiring temperature control
-- ✅ Vision/multimodal tasks
-- ✅ Large-scale deployments
-- ✅ Precise generation control
-- ✅ Native tool calls
-
-**Migration**: Changing one line of code is sufficient (see Migration Path section above).
+[`examples/basic_usage.py`](examples/basic_usage.py) covers invocation, system prompts, streaming, chains, async, batch, routing, multi-turn history and stop sequences.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Feel free to:
-- Add features
-- Improve documentation
-- Report bugs
-- Propose optimizations
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 📄 License
 
@@ -313,10 +206,6 @@ MIT
 
 ## 🙏 Acknowledgments
 
-- Anthropic for Claude and Claude Code
+- Anthropic for Claude, Claude Code and the Claude Agent SDK
 - LangChain for the framework
-- Stéphane Wootha Richard for orchestration
-
----
-
-**Note**: This adapter is perfect for prototyping and development. For large-scale production, consider the official Anthropic API.
+- Stéphane Wootha Richard for the original adapter

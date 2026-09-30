@@ -1,29 +1,24 @@
 # __INDEX - Project Root
 
 ## README.md
-Description: Main project documentation with installation, usage, and examples
+Description: Main project documentation - installation, usage, configuration, limitations, tests
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## CHANGELOG.md
 Description: Detailed change history with commits, tags, and impact documentation
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## CONTRIBUTING.md
 Description: Contribution guidelines documenting project structure, testing philosophy, and development workflow
 Created: 2025-10-01
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## DEPLOYMENT.md
-Description: Complete deployment guide for PyPI, Conda, Poetry, GitHub, Docker, and other distribution platforms
+Description: Deployment guide - GitHub release distribution (primary), PyPI notes, version management
 Created: 2025-10-01
-Modified: 2025-10-01
-
-## PYPI_UPLOAD_GUIDE.md
-Description: Step-by-step guide for PyPI publication with validation and troubleshooting
-Created: 2025-10-01
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## LICENSE
 Description: MIT License for open source distribution
@@ -31,19 +26,19 @@ Created: 2025-10-01
 Modified: 2025-10-01
 
 ## pyproject.toml
-Description: Python project metadata, dependencies, and build configuration (PEP 621)
+Description: Python project metadata, dependencies, build, lint and pytest configuration (PEP 621)
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## pixi.toml
 Description: Pixi environment configuration with development tasks and dependencies
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## pixi.lock
 Description: Pixi lock file for reproducible environments (auto-generated)
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## .gitignore
 Description: Git exclusion patterns for Python, Pixi, and local documentation
@@ -53,12 +48,7 @@ Modified: 2025-10-01
 ## MANIFEST.in
 Description: Package distribution file inclusion/exclusion rules
 Created: 2025-10-01
-Modified: 2025-10-01
-
-## test_simple.py
-Description: Quick validation test for basic package functionality
-Created: 2025-09-30
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ## Directories
 
@@ -67,7 +57,7 @@ Description: Main package source code (ClaudeCodeChatModel implementation)
 See: src/__INDEX.md
 
 ### specs/
-Description: Pragmatic flow tests (public API testing)
+Description: Pragmatic flow tests - offline (scripted SDK) and live (real CLI)
 See: specs/__INDEX.md
 
 ### docs/
@@ -75,7 +65,7 @@ Description: Technical documentation and investigation reports
 See: docs/__INDEX.md
 
 ### scripts/
-Description: Utility scripts for development and automation
+Description: Deployment and smoke-test scripts
 See: scripts/__INDEX.md
 
 ### data/
@@ -100,19 +90,15 @@ Status: Managed by Pixi
 Description: Project-specific guidance for Claude Code (local development only)
 Status: Not versioned, developer-specific
 
-### IMPORTANT_MODEL_NOTE.md
-Description: Critical notes about model naming (local reference only)
-Status: Not versioned, internal documentation
-
 ## Project Structure Overview
 
 ```
 claude-code-sdk-langchain/
 ├── src/claude_code_langchain/    # Main package
-├── specs/                         # Flow tests (public API)
+├── specs/                         # Flow tests (offline + live)
 ├── docs/                          # Technical documentation
 ├── examples/                      # Usage demonstrations
-├── scripts/                       # Development utilities
+├── scripts/                       # Deploy + smoke test
 ├── data/                          # Project data
 ├── dist/                          # Build artifacts (generated)
 ├── .pixi/                         # Pixi environments (generated)
@@ -130,17 +116,18 @@ claude-code-sdk-langchain/
 ```bash
 # Development
 pixi shell                         # Enter dev environment
-pixi run test                      # Run all tests
-pixi run check                     # Run quality checks
+pixi run test-offline              # Offline flow tests (no CLI needed)
+pixi run test-live                 # Live flow tests (real CLI)
+pixi run test                      # All tests
+pixi run smoke                     # One-shot end-to-end check
+pixi run check                     # Format check, lint, typecheck
 
 # Building
 pixi run build-package             # Build distribution
 pixi run validate-package          # Validate with twine
 
-# Deployment
-pixi run publish-test              # Publish to TestPyPI
-pixi run publish                   # Full deployment (tests + PyPI)
-
-# Documentation
-pixi run docs-serve                # Serve docs locally
+# Deployment (GitHub releases)
+pixi run deploy                    # Build and show release instructions
+pixi run deploy-with-tests         # Same, running tests first
+pixi run deploy-tag                # Same, and create/push the git tag
 ```

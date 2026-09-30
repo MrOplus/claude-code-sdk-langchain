@@ -1,21 +1,21 @@
 # __INDEX - src
 
 ## claude_code_langchain/
-Description: Main package implementation of LangChain adapter for Claude Code SDK
+Description: Main package - LangChain chat model backed by claude-agent-sdk
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ### claude_code_langchain/__init__.py
-Description: Package exports - ClaudeCodeChatModel public API
+Description: Package exports - ClaudeCodeChatModel, ClaudeCodeError, ClaudeCodeTimeoutError, DEFAULT_MODEL, MessageConverter
 Created: 2025-09-29
-Modified: 2025-09-29
+Modified: 2026-09-30
 
 ### claude_code_langchain/chat_model.py
-Description: Core ClaudeCodeChatModel implementation - BaseChatModel with sync/async streaming, anyio isolation pattern, and error handling
+Description: ClaudeCodeChatModel - ClaudeSDKClient lifecycle (interrupt/disconnect on early exit), token-level streaming, stop sequence emulation, usage metadata, anyio isolation, timeouts
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30
 
 ### claude_code_langchain/message_converter.py
-Description: Message conversion between LangChain format and Claude prompt format, usage metadata extraction
+Description: LangChain messages to system prompt + user prompt, multimodal text extraction, usage/response metadata conversion
 Created: 2025-09-29
-Modified: 2025-10-01
+Modified: 2026-09-30

@@ -9,14 +9,13 @@ Usage:
     pixi run deploy --tag     # Also create and push git tag
 
     # Install from GitHub:
-    pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git
+    pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git
 """
 
 import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 
 class Colors:
@@ -204,18 +203,18 @@ def show_github_instructions():
     version = get_version()
     print(f"\n  Package version: {Colors.BOLD}{version}{Colors.END}")
     print(f"\n  {Colors.BOLD}To create a GitHub release:{Colors.END}")
-    print(f"  1. Go to: https://github.com/kapp667/claude-code-sdk-langchain/releases/new")
+    print("  1. Go to: https://github.com/MrOplus/claude-code-sdk-langchain/releases/new")
     print(f"  2. Tag version: v{version}")
     print(f"  3. Release title: Release v{version}")
-    print(f"  4. Attach files from dist/ directory:")
+    print("  4. Attach files from dist/ directory:")
 
     dist_files = Path("dist").glob("*")
     for dist_file in sorted(dist_files):
         print(f"     - {dist_file.name}")
 
     print(f"\n  {Colors.BOLD}Users can install via:{Colors.END}")
-    print(f"  pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git")
-    print(f"  pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git@v{version}")
+    print("  pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git")
+    print(f"  pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v{version}")
     print(f"\n  {Colors.BOLD}Or download wheel from release:{Colors.END}")
     print(f"  pip install claude_code_langchain-{version}-py3-none-any.whl")
     print_success("Package ready for GitHub distribution")
@@ -287,11 +286,11 @@ def main():
     print("\nDistribution files created in dist/")
     print("\nNext steps:")
     print("  1. Create GitHub Release:")
-    print(f"     https://github.com/kapp667/claude-code-sdk-langchain/releases/new")
+    print("     https://github.com/MrOplus/claude-code-sdk-langchain/releases/new")
     print("  2. Attach wheel and tarball from dist/")
     print("  3. Users can install via:")
     print(
-        f"     pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git@v{version}"
+        f"     pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v{version}"
     )
 
 

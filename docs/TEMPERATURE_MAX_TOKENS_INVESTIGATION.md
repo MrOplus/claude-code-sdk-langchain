@@ -1,6 +1,19 @@
 # Investigation: Temperature/Max_Tokens Support
 
-## Date: 2025-09-30
+## Date: 2025-09-30 (updated 2026-09-30)
+
+> **Update (v0.2.0, claude-agent-sdk 0.2.162, CLI 2.1.285)**: the conclusions still hold.
+> `claude --help` still exposes no temperature or max-tokens flag, and `ClaudeAgentOptions`
+> has no such fields. The CLI does honor the `CLAUDE_CODE_MAX_OUTPUT_TOKENS` environment
+> variable, but when a response exceeds the limit the request **fails**
+> (`API Error: Claude's response exceeded the 20 output token maximum`) instead of
+> being truncated with `stop_reason="max_tokens"`. That is incompatible with API semantics,
+> so it is not used to emulate `max_tokens`.
+>
+> Implementation changes in v0.2.0: `temperature` and `max_tokens` now default to `None`,
+> and a warning is logged only when a value is actually set. Previously the warning keyed off
+> the sentinel defaults 0.7 and 2000. The code excerpts below show the v0.1.0 code at the
+> time of the investigation.
 
 ## Question
 

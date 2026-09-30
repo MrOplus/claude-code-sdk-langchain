@@ -1,5 +1,42 @@
 # CHANGELOG
 
+[2026-09-30 15:00] #release v0.2.0 - Migrate to claude-agent-sdk, isolation, token streaming
+→ commits: TBD | tag: v0.2.0
+→ modules: src/claude_code_langchain/*, specs/*, examples/basic_usage.py, scripts/smoke_test.py, docs/*, pixi.toml, pyproject.toml
+→ keywords: claude-agent-sdk, migration, streaming, isolation, mcp, stop-sequences, usage-metadata, cleanup, english
+• **CRITICAL**: Default model `claude-sonnet-4-20250514` is no longer accessible via the CLI (every
+  default request failed) → default is now the `sonnet` alias
+• **CRITICAL**: Migrated from `claude-code-sdk` (superseded) to `claude-agent-sdk>=0.2.0`
+• **HIGH**: Abandoned requests (early break, stop sequence, timeout) no longer leave the CLI generating
+  in the background: uses ClaudeSDKClient with interrupt() + disconnect(), clearing pending
+  cancellation so the SDK's shutdown completes (the SDK's query() never closes its inner generator)
+• **HIGH**: claude.ai account connectors (MCP) were attached to every request (+~2,900 input tokens,
+  answers mentioning Gmail/Drive tools) → `strict_mcp_config=True` by default, `mcp_servers` opt-in
+• **HIGH**: Pure-chat isolation by default: built-in tools off, `setting_sources=[]` (no CLAUDE.md/hooks),
+  `--no-session-persistence`
+• **HIGH**: Token-level streaming from partial stream events (was one chunk per text block)
+• SystemMessages are sent as the real system prompt; a single HumanMessage is sent verbatim
+• `usage_metadata` populated like ChatAnthropic (cache-inclusive input tokens, reasoning tokens);
+  `response_metadata` gains `model_name` (resolved ID) and `stop_reason`
+• Stop sequences emulated client-side (also split across chunks), `stop_reason="stop_sequence"`
+• New options: `effort`, `timeout`, `builtin_tools`, `max_turns`, `setting_sources`, `mcp_servers`,
+  `strict_mcp_config`, `persist_session`, `env`, `cli_path`, `stop`
+• New errors: `ClaudeCodeError(RuntimeError)`, `ClaudeCodeTimeoutError(ClaudeCodeError, TimeoutError)`
+• `temperature`/`max_tokens` default to None; warn only when set (were 0.7/2000 sentinels)
+• LangSmith params (`ls_provider="anthropic"`, `ls_model_name`, `ls_stop`)
+• Removed dead `MessageConverter.langchain_to_claude_dict` / `extract_content_from_claude`; removed
+  manual token-callback dispatch (langchain-core 1.x dispatches centrally → requires langchain-core>=1.0)
+• Tests: new offline flows with a scripted SDK client (`fake_sdk.py`, `conftest.py`, 37 tests),
+  live flows marked `live` and auto-skipped without the CLI (18 tests); all 55 passing
+• English normalization: remaining French in tests, examples, error messages and model note translated
+• Tooling: pixi manifest cleaned (dropped unused httpx/aiofiles/langgraph/mkdocs, dead tasks),
+  lock regenerated; `test-offline`/`test-live`/`smoke`/`examples` tasks; `test_simple.py` →
+  `scripts/smoke_test.py`; black/ruff targets fixed to py311
+• Docs: README rewritten (isolation, configuration, limitations), new `docs/SDK_INTEGRATION.md`
+  (replaces the stale 1,700-line claude-code-sdk reference), updated validation summary, indexes,
+  URLs point to the MrOplus fork
+• Impact: adapter works again out of the box, cheaper and more faithful requests, no orphaned CLI processes
+
 [2025-10-02 00:00] #docs Updated CLAUDE.md with complete project state
 → commits: 8c3fe18 | tag: init-20251002-0000
 → modules: CLAUDE.md, .gitignore

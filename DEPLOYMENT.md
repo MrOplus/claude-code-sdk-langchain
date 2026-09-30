@@ -33,28 +33,29 @@ pixi run deploy
 
 This will:
 - Run quality checks (format, lint, typecheck)
+- Run the test suite (`deploy-with-tests` only)
 - Build wheel and tarball
 - Validate package
 - Display instructions for GitHub release
 
 2. **Create GitHub Release**:
-- Go to: https://github.com/kapp667/claude-code-sdk-langchain/releases/new
-- Tag version: `v0.1.0` (matches pyproject.toml)
-- Release title: `Release v0.1.0`
+- Go to: https://github.com/MrOplus/claude-code-sdk-langchain/releases/new
+- Tag version: `v0.2.0` (matches pyproject.toml)
+- Release title: `Release v0.2.0`
 - Attach files from `dist/` directory:
-  - `claude_code_langchain-0.1.0-py3-none-any.whl`
-  - `claude_code_langchain-0.1.0.tar.gz`
+  - `claude_code_langchain-0.2.0-py3-none-any.whl`
+  - `claude_code_langchain-0.2.0.tar.gz`
 
 3. **Users can install via**:
 ```bash
 # Latest from main branch
-pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git
+pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git
 
 # Specific version tag
-pip install git+https://github.com/kapp667/claude-code-sdk-langchain.git@v0.1.0
+pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v0.2.0
 
 # Or download wheel from release
-pip install claude_code_langchain-0.1.0-py3-none-any.whl
+pip install claude_code_langchain-0.2.0-py3-none-any.whl
 ```
 
 ### Update Package
@@ -83,8 +84,8 @@ If you want to publish to PyPI later, you'll need:
 1. PyPI account at https://pypi.org
 2. API token from https://pypi.org/manage/account/token/
 3. Configure `~/.pypirc` with token
-4. Install twine: `pixi add twine`
-5. Add publish tasks to `pixi.toml`
+4. Build and validate: `pixi run validate-package`
+5. Upload: `pixi run twine upload dist/*`
 
 For now, GitHub distribution is simpler and sufficient for most use cases.
 
@@ -97,10 +98,10 @@ Users with Pixi can add to their `pixi.toml`:
 ```toml
 [pypi-dependencies]
 # From GitHub
-claude-code-langchain = { git = "https://github.com/kapp667/claude-code-sdk-langchain.git" }
+claude-code-langchain = { git = "https://github.com/MrOplus/claude-code-sdk-langchain.git" }
 
 # Or specific version
-claude-code-langchain = { git = "https://github.com/kapp667/claude-code-sdk-langchain.git", tag = "v0.1.0" }
+claude-code-langchain = { git = "https://github.com/MrOplus/claude-code-sdk-langchain.git", tag = "v0.2.0" }
 ```
 
 ---
@@ -111,7 +112,7 @@ For contributors:
 
 ```bash
 # Clone repository
-git clone https://github.com/kapp667/claude-code-sdk-langchain.git
+git clone https://github.com/MrOplus/claude-code-sdk-langchain.git
 cd claude-code-sdk-langchain
 
 # Enter Pixi environment
@@ -166,11 +167,10 @@ pixi run clean-build
 pixi run deploy-with-tests  # Include tests
 ```
 
-**Tests timeout**:
+**Tests are slow or you have no CLI access**:
 ```bash
-# Tests use Haiku by default (fast)
-export CLAUDE_TEST_MODEL=haiku
-pixi run test
+pixi run test-offline          # no CLI calls at all
+CLAUDE_TEST_MODEL=haiku pixi run test-live
 ```
 
 **Quality checks fail**:
@@ -184,5 +184,5 @@ pixi run typecheck  # Type checking
 
 ## Questions?
 
-- Issues: https://github.com/kapp667/claude-code-sdk-langchain/issues
-- Discussions: https://github.com/kapp667/claude-code-sdk-langchain/discussions
+- Issues: https://github.com/MrOplus/claude-code-sdk-langchain/issues
+- Discussions: https://github.com/MrOplus/claude-code-sdk-langchain/discussions

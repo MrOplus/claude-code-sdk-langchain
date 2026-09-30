@@ -1,187 +1,62 @@
-# Validation Summary - September 30, 2025
+# Validation Summary
 
-## Overview
+## v0.2.0 - 2026-09-30
 
-**Project**: LangChain Adapter for Claude Code SDK
-**Objective**: Create a completely neutral connector for prototyping with Claude Code subscription ($20/month) → transparent migration to production APIs
-**Date**: 2025-09-30
-**Result**: ✅ **Production Ready** - 92% behavioral neutrality achieved
+**Environment**: Windows 11, Python 3.11.13, langchain-core 1.6.6, claude-agent-sdk 0.2.162,
+Claude Code CLI 2.1.285, live model `haiku` (resolved to `claude-haiku-4-5-20251001`).
 
----
+### Results
 
-## Executive Summary
+| Suite | Tests | Result |
+|-------|-------|--------|
+| Offline flows (scripted SDK client) | 37 | ✅ 37 passed, stable across 10 consecutive runs |
+| Live flows (real Claude Code CLI) | 18 | ✅ 18 passed |
+| Offline flows inside the pixi environment | 37 | ✅ 37 passed |
 
-### Initial State (Session 1)
-- **19 logical bugs detected** (3 critical, 6 high, 5 medium, 5 low)
-- **Behavioral neutrality**: 65/100
-- **Production readiness**: ❌ NOT READY
+### What Was Verified Live
 
-### After Corrections (Session 2)
-- **12 bugs fixed**
-- **11 remaining bugs** (1 critical, 2 high, 2 medium, 6 low)
-- **8 new bugs detected** during re-validation
-- **Behavioral neutrality**: 92/100 ✅ ACCEPTABLE
-- **Production readiness**: ✅ READY with documented limitations
+- `invoke` / `ainvoke` return an `AIMessage` with `usage_metadata` and the resolved `model_name`
+- System messages are followed (they are sent as the real system prompt)
+- Multi-turn history is used by the model
+- Stop sequences truncate output and report `stop_reason="stop_sequence"`
+- `stream` / `astream` deliver **token-level** chunks that arrive over time
+- Streamed chunks aggregate into a full message with usage metadata
+- LCEL chains, output parsers (sync and async streaming), batch and multi-step chains
+- Breaking out of a stream leaves the model usable, and the CLI process is interrupted and reaped
+- Default requests are isolated: no built-in or MCP tools, under 1,500 input tokens
 
----
+### Issues Found and Fixed in This Release
 
-## Critical Issues Fixed
+| # | Severity | Issue | Resolution |
+|---|----------|-------|------------|
+| 1 | Critical | The default model `claude-sonnet-4-20250514` is no longer accessible; every default request failed | Default changed to the `sonnet` alias |
+| 2 | Critical | `claude-code-sdk` is superseded by `claude-agent-sdk` | Migrated; the options, errors and client lifecycle were updated |
+| 3 | High | Abandoned requests (early `break`, stop sequence, timeout) left the CLI process generating in the background | Requests now use `ClaudeSDKClient` with explicit `interrupt()` + `disconnect()`. Pending cancellation is cleared during cleanup so the SDK's shutdown can finish |
+| 4 | High | Streaming yielded whole text blocks, not tokens | Uses partial stream events (`text_delta`) with a fallback to full blocks |
+| 5 | High | The Claude Code default tools, CLAUDE.md files and user hooks leaked into "chat" requests | Tools are disabled and `setting_sources=[]` by default |
+| 5b | High | claude.ai account connectors (Gmail, Drive, Docs, ...) were attached to every request: 8 MCP tools, about 2,900 extra input tokens (3,377 vs. 444), and answers that mention those tools | `strict_mcp_config=True` by default; `mcp_servers` attaches servers explicitly. A live regression test asserts input tokens stay under 1,500 |
+| 6 | Medium | System messages were inlined as `System:` text | Sent as the real system prompt |
+| 7 | Medium | Every request wrote a session transcript to `~/.claude` | `--no-session-persistence` by default (`persist_session=True` to opt in) |
+| 8 | Medium | No `usage_metadata`, so LangChain token accounting was empty | `UsageMetadata` is populated the same way ChatAnthropic does it |
+| 9 | Medium | Stop sequences were ignored | Emulated client-side, including sequences split across chunks |
+| 10 | Low | Warnings fired for the default `temperature=0.7` / `max_tokens=2000` sentinels | Defaults are now `None`; warnings fire only when a value is set |
+| 11 | Low | Tokens could be dispatched twice to callbacks | langchain-core 1.x dispatches centrally; the manual dispatch was removed |
 
-### 1. ❌ Temperature & Max_Tokens Not Supported
-**Issue**: CLI silently ignored these parameters
-**Solution**: Explicit warnings at initialization + documentation
-**Impact**: Users are now informed of this limitation
-**Detailed Investigation**: See `TEMPERATURE_MAX_TOKENS_INVESTIGATION.md`
+### Known Limitations
 
-### 2. ❌ System Prompt Conflicts
-**Issue**: Dual system prompt mechanism caused conflicts
-**Solution**: Unified system prompt handling
-**Impact**: Consistent behavior between development and production
+See the README's *Limitations* section: `temperature` and `max_tokens` are not supported,
+images are dropped, there is no native `bind_tools`, and multi-turn history is sent as a
+transcript.
 
-### 3. ❌ Multimodal Content Support
-**Issue**: Images and multimodal content not supported
-**Solution**: Proper error handling and user feedback
-**Impact**: Clear error messages instead of silent failures
-
----
-
-## Known Limitations (Documented)
-
-### Temperature & Max_Tokens
-- **Limitation**: Claude Code CLI doesn't support these parameters
-- **Mitigation**: Warnings displayed, parameters accepted for API compatibility
-- **Documentation**: README.md explicitly documents this limitation
-- **Impact**: 85% neutrality (down from 100% if supported)
-
-### Multimodal Content
-- **Limitation**: Text-only support via Claude Code CLI
-- **Mitigation**: Clear error messages when multimodal content is detected
-- **Production Migration**: ChatAnthropic supports multimodal natively
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS` was evaluated as a way to implement `max_tokens`. When
+the limit is exceeded the CLI **fails the request** instead of truncating, which is
+incompatible with API semantics, so it was not adopted.
 
 ---
 
-## Behavioral Neutrality Analysis
+## v0.1.0 - 2025-09-30 (historical)
 
-### What Works Identically (92%)
-
-✅ **Core Chat Functionality**
-- Message format conversion (System, Human, AI messages)
-- Synchronous invocation
-- Asynchronous invocation
-- Streaming (sync and async)
-- Batch processing
-- LangChain chain integration (LCEL)
-
-✅ **Session Management**
-- Stateless mode (default, recommended)
-- Continuous session mode (optional)
-- Proper cleanup and error handling
-
-✅ **Error Handling**
-- CLI not found errors
-- Process errors
-- JSON decode errors
-- Network timeouts
-- All properly wrapped with actionable messages
-
-### What Differs (8%)
-
-⚠️ **Parameter Support**
-- `temperature`: Not supported (uses model default)
-- `max_tokens`: Not supported (uses model default)
-- **Mitigation**: Explicit warnings + documentation
-
-⚠️ **Content Types**
-- Text-only (no images, documents, multimodal)
-- **Mitigation**: Clear error messages
-
-⚠️ **Latency**
-- Higher latency due to subprocess overhead
-- **Impact**: Not critical for prototyping use case
-
----
-
-## Test Coverage
-
-### Flow Tests (Pragmatic Testing Approach)
-- ✅ Basic chat invocation
-- ✅ Streaming responses
-- ✅ Error handling flows
-- ✅ LangChain integration
-- ✅ Session management
-- ✅ Async operations
-
-### All Tests Passing
-- 16/16 functional tests: ✅ PASSED
-- 0 regressions detected
-- Production API compatibility validated
-
----
-
-## Migration Path
-
-### Development (Prototyping)
-```python
-from claude_code_langchain import ClaudeCodeChatModel
-
-model = ClaudeCodeChatModel(
-    model="claude-sonnet-4-20250514"
-)
-# Uses Claude Code subscription - $0 API costs
-```
-
-### Production (Deployment)
-```python
-from langchain_anthropic import ChatAnthropic
-
-model = ChatAnthropic(
-    model="claude-3-opus-20240229",
-    temperature=0.7,
-    max_tokens=1000,
-    api_key=os.getenv("ANTHROPIC_API_KEY")
-)
-# Identical interface, just swap the class
-```
-
-**Code changes required**: Only 1 line (model instantiation)
-
----
-
-## Conclusion
-
-✅ **Adapter is production-ready** with 92% behavioral neutrality
-✅ **Clear limitations documented** (temperature, max_tokens, multimodal)
-✅ **Transparent migration path** to production APIs
-✅ **Comprehensive error handling** with actionable messages
-✅ **All flow tests passing** with no regressions
-
-### Remaining 8% Gap
-- Accepted trade-off for cost-free prototyping
-- All limitations are documented and warned
-- Users are informed before unexpected behavior occurs
-
----
-
-## Recommendations
-
-1. ✅ **Use for prototyping**: Excellent for development without API costs
-2. ✅ **Migrate to ChatAnthropic for production**: Especially if you need:
-   - Temperature control
-   - Token limit control
-   - Multimodal support (images, documents)
-3. ✅ **Read warnings carefully**: All limitations are explicitly communicated
-
----
-
-## Full Details
-
-For the complete 422-line validation report with all technical details, test results, and bug-by-bug analysis, see: `docs/archive/VALIDATION_REPORT_2025-09-30_FR.md` (French original, archived)
-
----
-
-## References
-
-- **Temperature Investigation**: `TEMPERATURE_MAX_TOKENS_INVESTIGATION.md`
-- **Pragmatic Testing Philosophy**: `specs/README.md`
-- **Usage Examples**: `examples/basic_usage.py`
-- **Migration Guide**: `README.md`
+The original validation found 19 logic bugs across two review sessions. The critical ones
+were silent `temperature`/`max_tokens` handling, conflicting system prompts and missing
+multimodal handling. They were fixed with warnings and documentation. 16/16 live flow
+tests passed with `claude-code-sdk` 0.0.23.
