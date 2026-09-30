@@ -1,5 +1,25 @@
 # Validation Summary
 
+## v0.3.0 - 2026-09-30 (tool calling)
+
+Same environment as v0.2.0, plus langchain 1.4.3 for agent tests.
+
+| Suite | Tests | Result |
+|-------|-------|--------|
+| Offline flows | 51 | ✅ 51 passed (14 new tool-calling flows) |
+| Live flows | 24 | ✅ 24 passed (6 new tool-calling flows) |
+
+**Verified live**: native tool calls returned without execution, parallel calls, text answers
+when no tool is needed, a manual tool loop that finishes without repeated calls, a forced
+named tool, `with_structured_output(Pydantic)`, and `create_agent` with sequential dependent
+tools (`find_city` → `city_weather`).
+
+**Issue found during development**: replaying tool results as labelled plain text made Haiku
+repeat the same calls in 10/10 replays that included a system prompt (`create_agent` looped
+until its recursion limit). Structured `<conversation_history>` replay with a closing
+instruction brought this to 0/10 (haiku) and 0/5 (sonnet), and 3/3 sequential agent runs and
+3/3 parallel agent runs completed.
+
 ## v0.2.0 - 2026-09-30
 
 **Environment**: Windows 11, Python 3.11.13, langchain-core 1.6.6, claude-agent-sdk 0.2.162,

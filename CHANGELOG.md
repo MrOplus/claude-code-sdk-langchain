@@ -1,5 +1,23 @@
 # CHANGELOG
 
+[2026-09-30 18:00] #feature v0.3.0 - Tool calling, structured output, agents
+→ commits: TBD | tag: v0.3.0
+→ modules: src/claude_code_langchain/*, specs/flow_tool_calling*, specs/fake_sdk.py, examples/basic_usage.py, README.md, docs/*
+→ keywords: tool-calling, bind_tools, tool_choice, structured-output, agents, langgraph, mcp, defer-hook
+• `bind_tools()`: tools are exposed to Claude as native tools on an in-process MCP server; a
+  PreToolUse hook defers every call, so the CLI returns tool calls without executing anything
+• `AIMessage.tool_calls` / streamed `tool_call_chunks`, parallel calls, `stop_reason="tool_use"`
+• `tool_choice`: named tool enforced exactly (only that tool exposed), "any"/"required" by
+  instruction, "none" exposes no tools; OpenAI-style dict choices accepted
+• `with_structured_output()` works via langchain-core's tool-based implementation
+• Works with `langchain.agents.create_agent` (LangGraph)
+• Multi-turn history (incl. tool calls/results) is replayed as a structured
+  `<conversation_history>` block with a closing instruction. Plain labelled text made Haiku
+  repeat tool calls in 10/10 replays (infinite agent loops); structured replay: 0/10 haiku, 0/5 sonnet
+• Claude Code built-in tools are never reported as LangChain tool calls
+• Tests: 14 offline + 6 live tool-calling flows (incl. create_agent); 75 total passing
+• Impact: agent prototyping on a Claude Code subscription, including tool use
+
 [2026-09-30 15:00] #release v0.2.0 - Migrate to claude-agent-sdk, isolation, token streaming
 → commits: TBD | tag: v0.2.0
 → modules: src/claude_code_langchain/*, specs/*, examples/basic_usage.py, scripts/smoke_test.py, docs/*, pixi.toml, pyproject.toml

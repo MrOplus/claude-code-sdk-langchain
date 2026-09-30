@@ -7,7 +7,7 @@
 
 Use Claude through your **Claude Code subscription** as a LangChain chat model, so you can prototype agentic applications **without per-token API charges**.
 
-`ClaudeCodeChatModel` is a regular LangChain `BaseChatModel`. It works with `invoke`, `stream`, `batch`, their async versions, LCEL chains and output parsers. Requests run through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/) and the Claude Code CLI. When you're ready for production, swap in `ChatAnthropic` by changing one line.
+`ClaudeCodeChatModel` is a regular LangChain `BaseChatModel`. It works with `invoke`, `stream`, `batch`, their async versions, LCEL chains, output parsers, **tool calling**, `with_structured_output` and LangChain/LangGraph agents. Requests run through the [Claude Agent SDK](https://pypi.org/project/claude-agent-sdk/) and the Claude Code CLI. When you're ready for production, swap in `ChatAnthropic` by changing one line.
 
 ## 🎯 Why
 
@@ -33,14 +33,14 @@ claude   # log in once with your subscription
 pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git
 
 # Specific version tag
-pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v0.2.0
+pip install git+https://github.com/MrOplus/claude-code-sdk-langchain.git@v0.3.0
 ```
 
 ### Via Pixi
 
 ```toml
 [pypi-dependencies]
-claude-code-langchain = { git = "https://github.com/MrOplus/claude-code-sdk-langchain.git", tag = "v0.2.0" }
+claude-code-langchain = { git = "https://github.com/MrOplus/claude-code-sdk-langchain.git", tag = "v0.3.0" }
 ```
 
 ## 🚀 Quick Start
@@ -76,6 +76,61 @@ async for chunk in model.astream("List 5 ideas"):
 ```
 
 If you stop iterating early, the CLI request is interrupted, so an abandoned stream doesn't keep generating and using your quota.
+
+## 🛠️ Tool Calling
+
+`bind_tools` works like it does with `ChatAnthropic`. Claude uses its native tool calling; the
+adapter returns the calls and **never executes your tools**. Your code (or an agent) runs them.
+
+```python
+from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.tools import tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return "18C, light rain"
+
+model_with_tools = ClaudeCodeChatModel(model="sonnet").bind_tools([get_weather])
+
+messages = [HumanMessage("What's the weather in Paris?")]
+ai = model_with_tools.invoke(messages)
+print(ai.tool_calls)   # [{'name': 'get_weather', 'args': {'city': 'Paris'}, 'id': 'toolu_...', ...}]
+
+messages += [ai] + [ToolMessage(get_weather.invoke(c["args"]), tool_call_id=c["id"]) for c in ai.tool_calls]
+print(model_with_tools.invoke(messages).content)   # "It's 18°C with light rain in Paris."
+```
+
+**Agents** work out of the box:
+
+```python
+from langchain.agents import create_agent
+
+agent = create_agent(ClaudeCodeChatModel(model="sonnet"), tools=[get_weather])
+agent.invoke({"messages": [{"role": "user", "content": "Weather in Paris?"}]})
+```
+
+**Structured output** is built on tool calling:
+
+```python
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+ClaudeCodeChatModel().with_structured_output(Person).invoke("Maria is 34.")
+# Person(name='Maria', age=34)
+```
+
+| `tool_choice` | Behavior |
+|---------------|----------|
+| `None` / `"auto"` | The model decides |
+| `"any"` / `"required"` / `True` | The model is instructed to call a tool (best-effort) |
+| `"<tool name>"` or `{"type": "function", "function": {"name": ...}}` | Only that tool is exposed, so it's the only possible call |
+| `"none"` | No tools are exposed |
+
+Parallel tool calls and streaming (`tool_call_chunks`) are supported.
 
 ## 🔒 Isolation by Default
 
@@ -167,8 +222,9 @@ These are deliberate trade-offs for free prototyping. Where behavior differs fro
 | `max_tokens` | Ignored, with a warning | The CLI's output limit fails the request instead of truncating it, so it can't be emulated faithfully. |
 | `stop` sequences | Emulated | Output is truncated at the first match and generation is interrupted. `stop_reason` is `"stop_sequence"`. |
 | Images / files | Dropped, with a warning | The CLI prompt channel is text-only. Use `ChatAnthropic` for vision. |
-| Native tool calling (`bind_tools`) | Not supported | Use prompting, or enable Claude Code's own `builtin_tools`. |
-| Multi-turn history | Rendered as a transcript | The CLI takes one user turn per request, so earlier turns are sent as `Human:` / `Assistant:` text. A single human message is sent verbatim. |
+| Multi-turn history | Replayed as structured text | The CLI takes one user turn per request, so earlier turns (including tool calls and results) are sent inside a `<conversation_history>` block. A single human message is sent verbatim. |
+| `tool_choice="any"` | Best-effort | Enforced by instruction; forcing a *named* tool is exact. |
+| Tool-call latency | One CLI start per model call | Each agent step is a new request (about 3–5 s with `haiku`). |
 | Latency | Higher than the API | Each request starts a CLI process (about 1–3 s of overhead). |
 | Environment context | ~400 input tokens | The CLI always adds basic environment info (OS, shell, working directory, date) to the context. It can't be turned off when a custom system prompt is used. |
 | Quotas | Your subscription limits | Switch to the API if you hit them. |
@@ -194,7 +250,7 @@ Without pixi: `pip install -e ".[dev]"`, then run `pytest specs -m "not live"`. 
 
 ## 📝 Examples
 
-[`examples/basic_usage.py`](examples/basic_usage.py) covers invocation, system prompts, streaming, chains, async, batch, routing, multi-turn history and stop sequences.
+[`examples/basic_usage.py`](examples/basic_usage.py) covers invocation, system prompts, streaming, chains, async, batch, routing, multi-turn history, stop sequences, tool calling and structured output.
 
 ## 🤝 Contributing
 

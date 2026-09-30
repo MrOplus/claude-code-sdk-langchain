@@ -47,7 +47,7 @@ running (and using quota) until it finishes on its own.
 **Input** (`MessageConverter.split_messages`):
 - `SystemMessage` content → `system_prompt`
 - a single `HumanMessage` → sent verbatim
-- multi-turn history → a `Human:` / `Assistant:` / `Tool Result:` transcript (the CLI accepts one user turn per query)
+- multi-turn history → a `<conversation_history>` block with `<user>`, `<assistant>`, `<tool_call>` and `<tool_result>` elements plus a next-step instruction (the CLI accepts one user turn per query)
 - image and other non-text parts → dropped, with a warning
 
 **Output** (`ClaudeCodeChatModel._iter_chunks`):
@@ -56,9 +56,41 @@ running (and using quota) until it finishes on its own.
 |-------------|---------|
 | `StreamEvent` with `content_block_delta` / `text_delta` | `AIMessageChunk(content=text)` |
 | `StreamEvent` with `thinking_delta` | `AIMessageChunk(additional_kwargs={"thinking": ...})` |
-| `AssistantMessage` | Model name; its text/thinking blocks are used only if no deltas were streamed for them |
+| `AssistantMessage` | Model name; its text/thinking blocks are used only if no deltas were streamed for them; `mcp__langchain__*` `ToolUseBlock`s become tool call chunks |
 | `ResultMessage` | Final chunk with `usage_metadata` and `response_metadata`; `is_error` → `ClaudeCodeError` |
 | Anything with `parent_tool_use_id` | Ignored (subagent output) |
+
+## Tool Calling
+
+`bind_tools()` converts tools to OpenAI-style schemas (`convert_to_openai_tool`) and binds
+them as `tools` / `tool_choice` kwargs. For each request that has tools:
+
+1. The schemas are served to Claude as native tools by an **in-process MCP server**
+   (`create_sdk_mcp_server`, server name `langchain`, so tools appear as
+   `mcp__langchain__<name>`).
+2. A **PreToolUse hook** matching `^mcp__langchain__` returns
+   `permissionDecision: "defer"`. The CLI stops the run (`stop_reason: "tool_deferred"`)
+   without executing anything; the MCP handlers are never called.
+3. Every `ToolUseBlock` for a `mcp__langchain__*` tool in the `AssistantMessage` becomes a
+   LangChain `tool_call_chunk`, so parallel calls are all reported. The response's
+   `stop_reason` is normalized to `"tool_use"`.
+4. On the next request, the history (including `AIMessage.tool_calls` and `ToolMessage`s) is
+   replayed inside `<conversation_history>` with `<tool_call>` / `<tool_result>` elements,
+   followed by an instruction not to repeat calls whose results are already present.
+
+`tool_choice`: a named tool is enforced by exposing only that tool. `"any"` / `"required"` is
+enforced by a system-prompt instruction. `"none"` exposes no tools.
+
+Built-in Claude Code tools (`builtin_tools`) are not deferred. They run inside the CLI and
+are not reported as LangChain tool calls.
+
+### Why structured replay
+
+With labelled plain text (`Human:` / `Assistant: [Tool call] ...` / `Tool Result: ...`),
+Haiku repeated the same tool calls in **10/10** replays that included a system prompt,
+which put `create_agent` into an infinite loop. With the XML-structured history and the
+closing instruction: **0/10** (haiku), **0/5** (sonnet), and sequential dependent tool calls
+still work.
 
 ## Error Mapping
 
