@@ -9,7 +9,7 @@ Run with:  python examples/basic_usage.py
 
 import asyncio
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
@@ -153,7 +153,7 @@ def example_conversation_history():
     # ClaudeCodeChatModel is stateless, like every LangChain chat model:
     # conversation context is carried by the messages you pass in.
     model = ClaudeCodeChatModel(model=MODEL)
-    conversation = [HumanMessage(content="My name is Alice.")]
+    conversation: list[BaseMessage] = [HumanMessage(content="My name is Alice.")]
 
     reply = model.invoke(conversation)
     print(f"R1: {reply.content}")
@@ -185,7 +185,7 @@ def example_tool_calling():
         return {"paris": "18C, light rain", "tokyo": "26C, sunny"}.get(city.lower(), "unknown")
 
     model = ClaudeCodeChatModel(model=MODEL).bind_tools([get_weather])
-    messages = [HumanMessage(content="Compare the weather in Paris and Tokyo.")]
+    messages: list[BaseMessage] = [HumanMessage(content="Compare the weather in Paris and Tokyo.")]
 
     while True:
         ai = model.invoke(messages)

@@ -83,7 +83,7 @@ If you stop iterating early, the CLI request is interrupted, so an abandoned str
 adapter returns the calls and **never executes your tools**. Your code (or an agent) runs them.
 
 ```python
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 @tool
@@ -93,7 +93,7 @@ def get_weather(city: str) -> str:
 
 model_with_tools = ClaudeCodeChatModel(model="sonnet").bind_tools([get_weather])
 
-messages = [HumanMessage("What's the weather in Paris?")]
+messages: list[BaseMessage] = [HumanMessage("What's the weather in Paris?")]
 ai = model_with_tools.invoke(messages)
 print(ai.tool_calls)   # [{'name': 'get_weather', 'args': {'city': 'Paris'}, 'id': 'toolu_...', ...}]
 

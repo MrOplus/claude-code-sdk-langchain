@@ -4,7 +4,7 @@ Reference: flow_tool_calling.md
 """
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -57,7 +57,7 @@ def test_model_answers_directly_when_no_tool_is_needed(model):
 def test_manual_tool_loop_reaches_final_answer(model):
     """Run tools, feed results back, and check the model finishes without repeating calls."""
     bound = model.bind_tools([get_weather, get_time])
-    messages = [
+    messages: list[BaseMessage] = [
         SystemMessage(content="You are a concise travel assistant."),
         HumanMessage(content="What's the weather and the local time in Tokyo?"),
     ]
@@ -77,7 +77,7 @@ def test_manual_tool_loop_reaches_final_answer(model):
             )
 
     final = messages[-1]
-    assert not final.tool_calls, "model never produced a final answer"
+    assert isinstance(final, AIMessage) and not final.tool_calls, "no final answer"
     assert "26" in final.content and "16:15" in final.content
     assert {name for name, _ in seen_calls} == {"get_weather", "get_time"}
 
