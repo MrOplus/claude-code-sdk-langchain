@@ -27,16 +27,17 @@ Validates real-time streaming capabilities of the Claude Code adapter, both sync
 5. User handles both content and metadata from chunks
 
 ## Expected Behavior
-- Chunks arrive incrementally, not in bulk
+- Chunks arrive token-by-token, not as whole blocks
 - Each chunk contains partial content
 - Streaming maintains message coherence
 - Final assembled message matches non-streaming response
 - Metadata (if present) is preserved in chunks
-- Stream can be interrupted/cancelled by user
+- Stream can be interrupted/cancelled by user; the CLI request is interrupted and the
+  model remains usable
 
 ## Success Criteria
 - At least 2 chunks received for multi-sentence responses
-- Total streamed content equals non-streamed response
+- Streamed chunks aggregate into a full message with usage metadata
 - No data loss or corruption during streaming
 - Proper async/await handling without deadlocks
 - Chain streaming preserves all transformations

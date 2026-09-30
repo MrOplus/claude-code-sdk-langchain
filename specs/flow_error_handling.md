@@ -1,63 +1,57 @@
 # Flow: Error Handling in ClaudeCodeChatModel
 
 ## Description
-Validates that the Claude Code adapter gracefully handles various error conditions and provides meaningful feedback to users when issues occur.
+Validates that the adapter handles failures gracefully and gives users actionable
+feedback. Failures are simulated with the scripted SDK client, so the flows are
+deterministic and need no CLI.
 
-## User Journey
+All runtime failures are raised as `ClaudeCodeError`, a subclass of `RuntimeError`, so
+existing `except RuntimeError` handlers keep working.
 
-### CLI Not Installed Flow
-1. User attempts to create ClaudeCodeChatModel instance
-2. System detects Claude Code CLI is not available
-3. User receives clear error message with installation instructions
-4. User installs CLI following the provided instructions
-5. User successfully creates model instance after CLI installation
+## User Journeys
 
-### Invalid Model Configuration Flow
-1. User creates model with invalid parameters (e.g., temperature > 1.0)
-2. User attempts to invoke the model
-3. System validates parameters and returns descriptive error
-4. User corrects the parameters
-5. User successfully uses the model with valid configuration
+### SDK Not Installed
+1. User creates a `ClaudeCodeChatModel` without `claude-agent-sdk` installed
+2. User gets an `ImportError` with `pip install` and CLI install instructions
 
-### Network/Process Error Flow
-1. User successfully creates model instance
-2. User invokes model but Claude Code process fails
-3. System catches the process error
-4. User receives RuntimeError with exit code and stderr details
-5. User can retry or handle the error appropriately
+### CLI Not Installed
+1. User invokes the model, and the `claude` executable can't be found
+2. User gets a `ClaudeCodeError` with `npm install -g @anthropic-ai/claude-code`
 
-### Response Parsing Error Flow
-1. User invokes model successfully
-2. Claude Code returns malformed JSON response
-3. System detects JSON decode error
-4. User receives error with the problematic line identified
-5. User can report issue or retry with different input
+### Process Failure
+1. The CLI process fails (authentication, crash, ...)
+2. User gets a `ClaudeCodeError` with the exit code and stderr
 
-### Timeout Handling Flow
-1. User sends a complex request requiring long processing
-2. Request exceeds reasonable time limit
-3. System handles timeout gracefully
-4. User receives timeout error message
-5. User can adjust timeout settings or simplify request
+### Unparseable CLI Output
+1. The CLI emits malformed JSON
+2. User gets a `ClaudeCodeError` that shows the offending line
 
-### Session Disconnection Flow
-1. User creates model with continuous session enabled
-2. User actively uses the session
-3. Session unexpectedly disconnects (network issue, CLI crash)
-4. System detects disconnection
-5. User receives error and can reconnect or create new session
+### Connection Failure
+1. The SDK can't connect to the CLI process
+2. User gets a `ClaudeCodeError` saying it could not connect
 
-## Expected Error Messages
+### Error Result
+1. The CLI reports an error result (for example an unknown or retired model)
+2. User gets a `ClaudeCodeError` with the CLI's explanation
 
-Each error should provide:
-- Clear description of what went wrong
-- Specific error type (CLINotFoundError, ProcessError, etc.)
-- Actionable recovery steps
-- Relevant context (exit codes, stderr output)
+### Errors While Streaming
+1. Some chunks arrive, then the process fails
+2. User receives the chunks that arrived before the failure, then the error
+3. The CLI process is disconnected
+
+### Recovery
+1. A request fails
+2. The next request on the same model instance succeeds
+
+### Invalid Input
+1. User passes an empty message list, or messages with empty content
+2. User gets a `ValueError` before any CLI process starts
+
+### Timeout
+Covered in `flow_offline_behavior.md`: `timeout` raises `ClaudeCodeTimeoutError`.
 
 ## Success Criteria
-- All errors are caught and wrapped appropriately
-- No silent failures or undefined behavior
-- Error messages guide users to resolution
-- System remains stable after errors
-- Errors don't leak implementation details unnecessarily
+- All errors are caught and wrapped with actionable messages
+- No silent failures
+- The model instance stays usable after an error
+- No CLI process is left running after an error

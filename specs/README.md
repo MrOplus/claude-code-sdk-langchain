@@ -2,119 +2,90 @@
 
 ## Testing Philosophy
 
-This directory contains pragmatic flow tests following the LLM-first development approach. These tests:
+This directory holds pragmatic flow tests written for an LLM-first development approach. These tests:
 
 - **Focus on user journeys** through public APIs only
-- **Treat the system as a black box** - no testing of private methods or implementation details
-- **Validate behavior, not implementation** - tests survive refactoring
-- **Leverage LLM inference** for unit-level validation (the LLM IS the unit test)
+- **Treat the system as a black box**: private methods and implementation details aren't tested
+- **Validate behavior, not implementation**, so they survive refactoring
+- **Leave unit-level checks to the LLM**: the model validates logic as it writes code (the LLM is the unit test)
+
+## Two Kinds of Flows
+
+| Kind | Marker | Needs CLI / subscription | Speed |
+|------|--------|--------------------------|-------|
+| **Offline** | *(none)* | No | ~1 s for the whole suite |
+| **Live** | `live` | Yes | ~2 min with `haiku` |
+
+**Offline flows** replace only the SDK client boundary with `fake_sdk.FakeClaudeSDKClient`,
+a scripted client that yields **real** SDK message types (`StreamEvent`, `AssistantMessage`,
+`ResultMessage`). Everything inside the adapter runs for real. Offline flows cover what a live
+model can't make deterministic: exact conversion, stop sequences split across chunks,
+error paths, early-exit cleanup and timeouts.
+
+**Live flows** call the real Claude Code CLI and prove the adapter works end to end. They're
+skipped automatically when `claude` isn't on PATH, or when `CLAUDE_SKIP_LIVE=1`.
 
 ## Test Structure
 
-Each flow has two components:
-1. **Flow Description** (`flow_*.md`) - User journey documentation
-2. **Flow Test** (`flow_*_test.py`) - Pytest implementation testing only public APIs
+Each flow has two parts:
+1. **Flow description** (`flow_*.md`): documentation of the user journey
+2. **Flow test** (`flow_*_test.py`): a pytest implementation that uses only public APIs
 
-## Available Flow Tests
+## Available Flows
 
-### 1. Basic Chat Flow
-- **Description**: `flow_basic_chat.md`
-- **Test**: `flow_basic_chat_test.py`
-- **Coverage**: Basic invocation, async operations, system prompts
+| Flow | Description | Test | Kind |
+|------|-------------|------|------|
+| Basic chat | `flow_basic_chat.md` | `flow_basic_chat_test.py` | Live |
+| LangChain integration | `flow_langchain_integration.md` | `flow_langchain_integration_test.py` | Live |
+| Streaming | `flow_streaming.md` | `flow_streaming_test.py` | Live |
+| Error handling | `flow_error_handling.md` | `flow_error_handling_test.py` | Offline |
+| Adapter behavior | `flow_offline_behavior.md` | `flow_offline_behavior_test.py` | Offline |
 
-### 2. LangChain Integration Flow
-- **Description**: `flow_langchain_integration.md`
-- **Test**: `flow_langchain_integration_test.py`
-- **Coverage**: LCEL chains, output parsers, batch processing, complex pipelines
-
-### 3. Streaming Flow
-- **Description**: `flow_streaming.md`
-- **Test**: `flow_streaming_test.py`
-- **Coverage**: Sync/async streaming, chain streaming, cancellation
-
-### 4. Error Handling Flow
-- **Description**: `flow_error_handling.md`
-- **Test**: `flow_error_handling_test.py`
-- **Coverage**: CLI errors, process failures, JSON parsing, recovery
-
-### 5. Session Management Flow
-- **Description**: `flow_session_management.md`
-- **Test**: `flow_session_management_test.py`
-- **Coverage**: Single-turn vs continuous, context retention, reconnection
+Supporting files: `conftest.py` (the `fake_claude` fixture and live-test skipping),
+`fake_sdk.py` (the scripted client and message builders), and `test_helpers.py`
+(`get_test_model_name()`).
 
 ## Running Tests
 
-### Run all flow tests:
 ```bash
-# Using pytest
-pytest specs/flow_*_test.py -v
+pixi run test-offline                 # offline flows
+pixi run test-live                    # live flows
+pixi run test                         # everything
 
-# Or run individually
-python specs/flow_streaming_test.py
+pytest specs -m "not live"            # without pixi
+pytest specs/flow_streaming_test.py   # one flow
+python specs/flow_basic_chat_test.py  # a flow file runs standalone too
 ```
 
-### With Pixi environment:
-```bash
-pixi run pytest specs/
-```
+The live model is chosen with `CLAUDE_TEST_MODEL` (default `haiku`). See `TEST_CONFIGURATION.md`.
 
 ## Key Testing Principles
 
-### ✅ DO Test:
-- Public API methods (`invoke()`, `stream()`, `astream()`)
-- User-visible behavior and outputs
+### ✅ DO test
+- Public API methods (`invoke()`, `stream()`, `astream()`, `batch()`)
+- User-visible behavior and outputs, including metadata
 - Error messages users will see
 - Integration with LangChain components
 - End-to-end flows
 
-### ❌ DON'T Test:
-- Private methods (anything with `_` prefix)
+### ❌ DON'T test
+- Private methods (anything with a `_` prefix)
 - Internal state or attributes
 - Implementation details
-- Database schemas
-- Code the LLM naturally validates
-
-## Why This Approach?
-
-1. **Velocity > Purity**: Tests that don't break during refactoring
-2. **LLM as Unit Test**: The model validates logic during code generation
-3. **Real User Flows**: Tests what users actually do
-4. **Maintenance-Free**: 80% less test maintenance overhead
-5. **Pixi Isolation**: Environmental determinism without mocking
-
-## Critical Configuration
-
-⚠️ **IMPORTANT**: All tests MUST use the correct model:
-```python
-model = ClaudeCodeChatModel(
-    model="claude-sonnet-4-20250514"  # Never change this
-)
-```
-
-This is Sonnet 4, not 3.5, not Opus. This has been explicitly confirmed by the user.
+- Code the LLM validates naturally
 
 ## Adding New Flow Tests
 
-1. Create flow description: `specs/flow_[name].md`
-2. Create test implementation: `specs/flow_[name]_test.py`
+1. Create the flow description: `specs/flow_[name].md`
+2. Create the test: `specs/flow_[name]_test.py`
 3. Test ONLY through public APIs
-4. Include docstring linking to flow description
-5. Focus on user journey, not implementation
+4. Live tests: add `pytestmark = pytest.mark.live` and use `get_test_model_name()`
+5. Offline tests: take the `fake_claude` fixture and set `fake_claude.script`
 
 ## Test Independence
 
 Each test should:
-- Be runnable independently
+- Be runnable on its own
 - Not depend on other tests
 - Clean up its own resources
 - Use the model as a black box
-
-## Continuous Integration
-
-These tests are designed to:
-- Run quickly (no complex setup)
-- Provide clear failure messages
-- Validate the contract, not the implementation
-- Survive aggressive refactoring
-
-Remember: The goal is to maximize development velocity while maintaining confidence in the public API contract.

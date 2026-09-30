@@ -1,116 +1,68 @@
 # Test Configuration Guide
 
-## Model Selection for Tests
+## Model Selection for Live Tests
 
-Flow tests make real API calls to Claude which can be slow and expensive. You can configure which model to use for tests.
+Live flow tests make real requests through the Claude Code CLI, which takes time and uses
+subscription quota. Choose the model with the `CLAUDE_TEST_MODEL` environment variable.
 
-### Quick Start
-
-**Use Haiku for fast tests** (recommended for CI/development):
 ```bash
-export CLAUDE_TEST_MODEL="haiku"
-pixi run test
+CLAUDE_TEST_MODEL=haiku pytest specs -m live     # fast (default)
+CLAUDE_TEST_MODEL=sonnet pytest specs -m live    # more thorough
+CLAUDE_TEST_MODEL=opus pytest specs -m live      # most capable, slowest
 ```
 
-**Use Sonnet for thorough validation**:
+`pixi.toml` sets `CLAUDE_TEST_MODEL=haiku` for `pixi run` / `pixi shell`. Override it per run:
+
 ```bash
-export CLAUDE_TEST_MODEL="sonnet"
-pixi run test
+CLAUDE_TEST_MODEL=sonnet pixi run test-live
 ```
 
-**Use specific model version**:
+### Aliases vs. Full IDs
+
+Prefer the aliases `haiku`, `sonnet` and `opus`, which resolve to the latest model of each
+family. Full IDs (for example `claude-haiku-4-5-20251001`) work until that model is retired.
+After that, requests fail with "There's an issue with the selected model".
+
+The resolved model is available as `response.response_metadata["model_name"]`.
+
+## Skipping Live Tests
+
+Live tests are skipped automatically when the `claude` executable isn't on PATH. To skip
+them explicitly (for example in CI without a subscription):
+
 ```bash
-export CLAUDE_TEST_MODEL="claude-sonnet-4-20250514"
-pixi run test
+CLAUDE_SKIP_LIVE=1 pytest specs
+# or
+pytest specs -m "not live"
 ```
 
-### Pixi Configuration
-
-The `pixi.toml` file sets `CLAUDE_TEST_MODEL=haiku` by default when you use `pixi shell` or `pixi run`.
-
-You can override this:
-```bash
-# Temporarily use sonnet
-CLAUDE_TEST_MODEL=sonnet pixi run test
-
-# Or edit pixi.toml [activation.env] section
-```
-
-### Available Models
-
-Claude Code CLI supports model aliases:
-- `haiku` - Fast and cheap (recommended for tests)
-- `sonnet` - Balanced performance
-- `opus` - Most capable but slowest
-
-Or use full model names:
-- `claude-3-5-haiku-20241022`
-- `claude-sonnet-4-20250514`
-- `claude-3-opus-20240229`
-
-### Implementation
-
-Tests use the helper function from `specs/test_helpers.py`:
+## Implementation
 
 ```python
+import pytest
+from claude_code_langchain import ClaudeCodeChatModel
 from .test_helpers import get_test_model_name
 
-# In your test
-model = ClaudeCodeChatModel(model=get_test_model_name())
+pytestmark = pytest.mark.live
+
+def test_something():
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 ```
 
-This reads `CLAUDE_TEST_MODEL` environment variable and falls back to the production default if not set.
+`get_test_model_name()` returns `CLAUDE_TEST_MODEL`, or `haiku` when it isn't set.
 
-### Performance Comparison
+## Reference Timings
 
-Approximate response times (for simple queries):
-- **Haiku**: 1-2 seconds ⚡️
-- **Sonnet**: 3-5 seconds
-- **Opus**: 5-10 seconds
+Measured on 2026-09-30 (Windows 11, CLI 2.1.285):
 
-For test suites with 20+ API calls, using Haiku can reduce test time from 2+ minutes to under 30 seconds.
+| Suite | Model | Duration |
+|-------|-------|----------|
+| Offline (37 tests) | - | ~1 s |
+| Live (18 tests) | haiku | ~2 min |
+| Single `invoke` | haiku | ~3-4 s (includes ~1-3 s CLI startup) |
 
-### Best Practices
+## Best Practices
 
-1. **CI/CD**: Always use `haiku` for continuous integration
-2. **Pre-deployment**: Run once with `sonnet` to validate quality
-3. **Development**: Use `haiku` for quick iteration
-4. **Production code**: Keep production default as `claude-sonnet-4-20250514`
-
-### Example Usage
-
-```bash
-# Fast development cycle
-pixi shell
-# (haiku is now default)
-pytest specs/flow_basic_chat_test.py
-
-# Thorough validation before deployment
-CLAUDE_TEST_MODEL=sonnet pixi run test
-
-# Test a specific model version
-CLAUDE_TEST_MODEL=claude-3-5-haiku-20241022 pytest specs/
-```
-
-## Why This Approach?
-
-1. **Speed**: Tests run 3-5x faster with Haiku
-2. **Cost**: Haiku is significantly cheaper per API call
-3. **Flexibility**: Easy to switch models without code changes
-4. **Production Safety**: Production code always uses the specified model
-5. **CI-Friendly**: Fast tests enable frequent CI runs
-
-## Migration Guide
-
-To update an existing test:
-
-```python
-# Before
-model = ClaudeCodeChatModel(model="claude-sonnet-4-20250514")
-
-# After
-from .test_helpers import get_test_model_name
-model = ClaudeCodeChatModel(model=get_test_model_name())
-```
-
-That's it! The test will now respect the `CLAUDE_TEST_MODEL` environment variable.
+1. **CI**: run offline flows on every change. Run live flows only where a logged-in CLI is available.
+2. **Development**: use `haiku` for quick iteration.
+3. **Before a release**: run the live suite once with `sonnet`.

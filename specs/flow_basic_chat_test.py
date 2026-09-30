@@ -1,157 +1,98 @@
 """
-Test de flux : Chat basique avec ClaudeCodeChatModel
+Live flow test: basic chat with ClaudeCodeChatModel against the real Claude Code CLI.
+Reference: flow_basic_chat.md
 """
 
-import asyncio
-
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from claude_code_langchain import ClaudeCodeChatModel
 
 from .test_helpers import get_test_model_name
 
+pytestmark = pytest.mark.live
+
 
 def test_basic_chat_invocation():
-    """Test d'invocation basique du modèle"""
-    from claude_code_langchain import ClaudeCodeChatModel
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 
-    # Créer le modèle - utilise CLAUDE_TEST_MODEL env var (haiku par défaut)
-    model = ClaudeCodeChatModel(model=get_test_model_name(), temperature=0.7, max_tokens=500)
+    response = model.invoke([HumanMessage(content="Hello, who are you? Answer in one sentence.")])
 
-    # Tester l'invocation synchrone
-    messages = [HumanMessage(content="Bonjour, qui es-tu?")]
-
-    try:
-        response = model.invoke(messages)
-
-        # Valider la réponse avec assertions plus strictes
-        assert response is not None, "La réponse ne devrait pas être None"
-        assert isinstance(response, AIMessage), f"Type attendu: AIMessage, reçu: {type(response)}"
-        assert len(response.content) > 0, "Le contenu de la réponse est vide"
-        assert response.content != "", "Le contenu est une chaîne vide"
-        assert not response.content.isspace(), "Le contenu ne contient que des espaces"
-
-        # Vérifier que la réponse a du sens (contient au moins quelques mots)
-        words = response.content.split()
-        assert len(words) >= 3, f"Réponse trop courte: seulement {len(words)} mots"
-
-        print("✅ Test basique réussi")
-        print(f"   Réponse: {response.content[:100]}...")
-
-    except Exception as e:
-        pytest.fail(f"Échec du test basique: {e}")
+    assert isinstance(response, AIMessage)
+    assert response.content.strip(), "Response content is empty"
+    assert len(response.content.split()) >= 3, f"Response too short: {response.content!r}"
 
 
-@pytest.mark.asyncio
 async def test_async_chat_invocation():
-    """Test d'invocation asynchrone du modèle"""
-    from claude_code_langchain import ClaudeCodeChatModel
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 
-    # Créer le modèle
-    model = ClaudeCodeChatModel(model="claude-sonnet-4-20250514", temperature=0.5, max_tokens=300)
+    response = await model.ainvoke([HumanMessage(content="Explain LangChain in one sentence.")])
 
-    # Tester l'invocation asynchrone
-    messages = [HumanMessage(content="Explique LangChain en une phrase")]
-
-    try:
-        response = await model.ainvoke(messages)
-
-        # Valider la réponse
-        assert response is not None
-        assert isinstance(response, AIMessage)
-        assert len(response.content) > 0
-
-        # Vérifier les métadonnées si disponibles
-        if response.response_metadata:
-            assert (
-                "model" in response.additional_kwargs or "session_id" in response.response_metadata
-            )
-
-        print("✅ Test async réussi")
-        print(f"   Réponse: {response.content}")
-
-    except Exception as e:
-        pytest.fail(f"Échec du test async: {e}")
+    assert isinstance(response, AIMessage)
+    assert response.content.strip()
 
 
-def test_streaming_chat():
-    """Test du streaming de réponses"""
-    from claude_code_langchain import ClaudeCodeChatModel
+def test_response_carries_usage_and_model_metadata():
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 
-    # Créer le modèle
-    model = ClaudeCodeChatModel(model="claude-sonnet-4-20250514", temperature=0.7)
+    response = model.invoke("What is 2+2? Reply with just the number.")
 
-    # Tester le streaming
-    messages = [HumanMessage(content="Compte de 1 à 5")]
-
-    try:
-        chunks_received = 0
-        full_response = ""
-
-        for chunk in model.stream(messages):
-            chunks_received += 1
-            full_response += chunk.content
-            print(f"   Chunk {chunks_received}: {chunk.content}", end="")
-
-        # Valider le streaming
-        assert chunks_received > 0, "Aucun chunk reçu"
-        assert len(full_response) > 0, "Réponse vide"
-
-        print("\n✅ Test streaming réussi")
-        print(f"   {chunks_received} chunks reçus")
-
-    except Exception as e:
-        pytest.fail(f"Échec du test streaming: {e}")
+    assert "4" in response.content
+    assert response.usage_metadata is not None
+    assert response.usage_metadata["output_tokens"] > 0
+    assert response.usage_metadata["input_tokens"] > 0
+    assert response.response_metadata["model_name"].startswith("claude-")
+    assert response.response_metadata["session_id"]
 
 
-def test_with_system_prompt():
-    """Test avec prompt système"""
-    from langchain_core.messages import SystemMessage
+def test_default_request_is_isolated_from_account_tools():
+    """No built-in tools, MCP servers or account connectors are attached by default.
+    Connector tool definitions would add thousands of input tokens per request."""
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 
-    from claude_code_langchain import ClaudeCodeChatModel
+    response = model.invoke("Reply with just the word OK.")
 
-    # Créer le modèle avec prompt système
-    model = ClaudeCodeChatModel(
-        model="claude-sonnet-4-20250514",
-        system_prompt="Tu es un expert Python qui répond de manière concise.",
-        temperature=0.3,
-        max_tokens=200,
+    assert response.usage_metadata["input_tokens"] < 1500, response.usage_metadata
+
+
+def test_system_message_is_followed():
+    model = ClaudeCodeChatModel(model=get_test_model_name())
+
+    response = model.invoke(
+        [
+            SystemMessage(content="Always start your answer with the exact word 'PYTHON:'"),
+            HumanMessage(content="What is a list? One sentence."),
+        ]
     )
 
-    # Tester avec message système
-    messages = [
-        SystemMessage(content="Réponds toujours en commençant par 'Python:'"),
-        HumanMessage(content="Qu'est-ce qu'une liste?"),
-    ]
+    assert response.content.strip().startswith("PYTHON:"), response.content
 
-    try:
-        response = model.invoke(messages)
 
-        # Valider la réponse
-        assert response is not None
-        assert isinstance(response, AIMessage)
-        assert len(response.content) > 0
+def test_conversation_history_is_used():
+    model = ClaudeCodeChatModel(model=get_test_model_name())
 
-        print("✅ Test avec système réussi")
-        print(f"   Réponse: {response.content[:150]}...")
+    response = model.invoke(
+        [
+            HumanMessage(content="My name is Alice."),
+            AIMessage(content="Nice to meet you, Alice!"),
+            HumanMessage(content="What is my name? Reply with just the name."),
+        ]
+    )
 
-    except Exception as e:
-        pytest.fail(f"Échec du test avec système: {e}")
+    assert "alice" in response.content.lower()
+
+
+def test_stop_sequence_truncates_output():
+    model = ClaudeCodeChatModel(model=get_test_model_name())
+
+    response = model.invoke(
+        "Count from 1 to 10 separated by single spaces. Output only the numbers.", stop=["6"]
+    )
+
+    assert "6" not in response.content
+    assert "5" in response.content
+    assert response.response_metadata["stop_reason"] == "stop_sequence"
 
 
 if __name__ == "__main__":
-    # Exécuter les tests manuellement
-    print("🧪 Tests de flux ClaudeCodeChatModel\n")
-
-    print("1. Test basique...")
-    test_basic_chat_invocation()
-
-    print("\n2. Test async...")
-    asyncio.run(test_async_chat_invocation())
-
-    print("\n3. Test streaming...")
-    test_streaming_chat()
-
-    print("\n4. Test avec système...")
-    test_with_system_prompt()
-
-    print("\n✅ Tous les tests sont passés!")
+    raise SystemExit(pytest.main([__file__, "-v"]))
