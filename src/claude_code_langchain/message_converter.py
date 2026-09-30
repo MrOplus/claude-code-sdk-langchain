@@ -1,9 +1,9 @@
 """
-Message converter between LangChain and Claude Code SDK
+Message conversion between LangChain and the Claude Agent SDK.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import (
     AIMessage,
@@ -13,192 +13,216 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.messages.ai import UsageMetadata
 
 logger = logging.getLogger(__name__)
 
+_IMAGE_PART_TYPES = {"image_url", "image", "input_image"}
+
 
 class MessageConverter:
-    """Converts between LangChain and Claude Code message formats"""
+    """Converts between LangChain messages and Claude Agent SDK inputs/outputs."""
 
     @staticmethod
-    def langchain_to_claude_prompt(messages: List[BaseMessage]) -> str:
+    def content_to_text(content: Any, index: int = 0) -> str:
         """
-        Converts a list of LangChain messages to a prompt string for Claude Code.
+        Extract plain text from a LangChain message content value.
+
+        Strings are returned as-is (stripped). For multimodal content lists, text parts
+        are joined and non-text parts (images, files, ...) are dropped with a warning,
+        because the Claude Code CLI prompt channel is text-only.
 
         Args:
-            messages: List of LangChain messages
+            content: Message content (str, list of parts, or other)
+            index: Message position, used in warning messages
 
         Returns:
-            Formatted prompt for Claude Code SDK
+            The extracted text (possibly empty)
+        """
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content.strip()
+        if not isinstance(content, list):
+            return str(content).strip()
+
+        text_parts: List[str] = []
+        for part in content:
+            if isinstance(part, str):
+                text_parts.append(part)
+                continue
+            if not isinstance(part, dict):
+                continue
+
+            part_type = part.get("type", "")
+            if part_type in _IMAGE_PART_TYPES or "image_url" in part:
+                logger.warning(
+                    f"Image content detected in message {index} but NOT SUPPORTED by the "
+                    "Claude Code adapter. The image will be ignored. This differs from "
+                    "production API behavior (ChatAnthropic supports vision)."
+                )
+            elif "text" in part and part_type in ("", "text"):
+                text_parts.append(str(part["text"]))
+            elif part_type:
+                logger.warning(
+                    f"Non-text content type '{part_type}' detected in message {index} and "
+                    "will be ignored. Only text content is supported."
+                )
+
+        return "\n".join(p for p in text_parts if p).strip()
+
+    @classmethod
+    def split_messages(cls, messages: List[BaseMessage]) -> Tuple[Optional[str], str]:
+        """
+        Split LangChain messages into a system prompt and a user prompt.
+
+        SystemMessages are joined into a real system prompt (passed to the CLI via
+        ``--system-prompt``). The remaining conversation becomes the user prompt:
+
+        - A single HumanMessage is sent verbatim (no role labels), which keeps the
+          prompt identical to what the production API would receive.
+        - Multi-turn conversations are rendered as a labelled transcript
+          (``Human:`` / ``Assistant:`` / ``Tool Result:``), since the CLI accepts a
+          single user turn per query.
+
+        Args:
+            messages: LangChain messages
+
+        Returns:
+            Tuple of (system prompt or None, user prompt)
 
         Raises:
-            ValueError: If message list is empty or contains invalid messages
+            ValueError: If the list is empty or contains no usable conversation content
         """
         if not messages:
             raise ValueError("Message list cannot be empty")
 
-        prompt_parts = []
+        system_parts: List[str] = []
+        turns: List[Tuple[BaseMessage, str]] = []
 
         for i, message in enumerate(messages):
-            # Content validation
-            if message.content is None:
-                logger.warning(f"Message {i} has None content, ignored")
-                continue
-
-            # Handle different content types
-            if isinstance(message.content, str):
-                content = message.content.strip()
-            elif isinstance(message.content, list):
-                # Multimodal content (text + images)
-                content_parts = []
-
-                for part in message.content:
-                    if isinstance(part, dict):
-                        # Check content type
-                        part_type = part.get("type", "")
-
-                        if part_type in ["image_url", "image"] or "image_url" in part:
-                            # Image detected - not supported
-                            logger.warning(
-                                f"Image content detected in message {i} but NOT SUPPORTED by Claude Code SDK. "
-                                "Image will be ignored. This differs from production API behavior "
-                                "(ChatAnthropic supports vision). Consider using production API for vision tasks."
-                            )
-                        elif "text" in part:
-                            content_parts.append(part["text"])
-                        else:
-                            # Other non-text content type
-                            if part_type and part_type != "text":
-                                logger.warning(
-                                    f"Non-text content type '{part_type}' detected in message {i} and will be ignored. "
-                                    "Only text content is supported by Claude Code SDK."
-                                )
-                    elif isinstance(part, str):
-                        content_parts.append(part)
-
-                content = " ".join(content_parts).strip()
-            else:
-                content = str(message.content).strip()
-
-            if not content:
+            text = cls.content_to_text(message.content, i)
+            if not text:
                 logger.warning(f"Message {i} has empty content, ignored")
                 continue
-
             if isinstance(message, SystemMessage):
-                # System messages become context
-                prompt_parts.append(f"System: {content}")
-
-            elif isinstance(message, HumanMessage):
-                prompt_parts.append(f"Human: {content}")
-
-            elif isinstance(message, AIMessage):
-                prompt_parts.append(f"Assistant: {content}")
-
-            elif isinstance(message, (ToolMessage, FunctionMessage)):
-                # Tool messages are specially formatted
-                prompt_parts.append(f"Tool Result: {content}")
-
+                system_parts.append(text)
             else:
-                # Fallback for any other type
-                prompt_parts.append(content)
+                turns.append((message, text))
 
-        if not prompt_parts:
+        if not turns:
+            raise ValueError(
+                "No valid message to convert: at least one non-empty, non-system message "
+                "is required"
+            )
+
+        system_prompt = "\n\n".join(system_parts) if system_parts else None
+
+        if len(turns) == 1 and isinstance(turns[0][0], HumanMessage):
+            return system_prompt, turns[0][1]
+
+        return system_prompt, "\n\n".join(cls._label(msg, text) for msg, text in turns)
+
+    @classmethod
+    def langchain_to_claude_prompt(cls, messages: List[BaseMessage]) -> str:
+        """
+        Render all messages (including system messages) as a single labelled transcript.
+
+        Kept for backward compatibility; the chat model itself uses ``split_messages``
+        so that system messages become a real system prompt.
+        """
+        if not messages:
+            raise ValueError("Message list cannot be empty")
+
+        parts = []
+        for i, message in enumerate(messages):
+            text = cls.content_to_text(message.content, i)
+            if not text:
+                logger.warning(f"Message {i} has empty content, ignored")
+                continue
+            parts.append(cls._label(message, text))
+
+        if not parts:
             raise ValueError("No valid message to convert")
-
-        # Claude Code SDK expects simple or structured prompt
-        return "\n\n".join(prompt_parts)
+        return "\n\n".join(parts)
 
     @staticmethod
-    def langchain_to_claude_dict(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
-        """
-        Converts LangChain messages to dict format for streaming.
-
-        Args:
-            messages: List of LangChain messages
-
-        Returns:
-            List of dicts for Claude Code SDK streaming
-        """
-        result = []
-
-        for message in messages:
-            if isinstance(message, SystemMessage):
-                # Add as system context
-                result.append({"type": "text", "text": f"[System Instructions]\n{message.content}"})
-
-            elif isinstance(message, HumanMessage):
-                result.append({"type": "text", "text": str(message.content)})
-
-            elif isinstance(message, AIMessage):
-                # To maintain conversation context
-                result.append(
-                    {"type": "text", "text": f"[Previous Assistant Response]\n{message.content}"}
-                )
-
-            elif isinstance(message, (ToolMessage, FunctionMessage)):
-                result.append({"type": "text", "text": f"[Tool Output]\n{message.content}"})
-
-        return result
+    def _label(message: BaseMessage, text: str) -> str:
+        if isinstance(message, SystemMessage):
+            return f"System: {text}"
+        if isinstance(message, HumanMessage):
+            return f"Human: {text}"
+        if isinstance(message, AIMessage):
+            return f"Assistant: {text}"
+        if isinstance(message, (ToolMessage, FunctionMessage)):
+            return f"Tool Result: {text}"
+        return text
 
     @staticmethod
-    def extract_content_from_claude(claude_message) -> str:
+    def extract_usage_metadata(result_message: Any) -> Dict[str, Any]:
         """
-        Extracts text content from a Claude Code message.
-
-        Args:
-            claude_message: Message from Claude Code SDK
+        Extract response metadata from an SDK ``ResultMessage``.
 
         Returns:
-            Extracted text content
+            Dict with any of: usage, cost_usd, duration_ms, session_id, stop_reason
         """
-        from claude_code_sdk import AssistantMessage, TextBlock
-
-        content = ""
-
-        if isinstance(claude_message, AssistantMessage):
-            for block in claude_message.content:
-                if isinstance(block, TextBlock):
-                    content += block.text
-
-        return content
-
-    @staticmethod
-    def extract_usage_metadata(claude_message) -> Dict[str, Any]:
-        """
-        Extracts usage metadata from a Claude Code message with error handling.
-
-        Args:
-            claude_message: Message from Claude Code SDK
-
-        Returns:
-            Dictionary of usage metadata
-        """
-        from claude_code_sdk import ResultMessage
-
         metadata: Dict[str, Any] = {}
 
         try:
-            if isinstance(claude_message, ResultMessage):
-                # Safe extraction with validation
-                if hasattr(claude_message, "usage") and claude_message.usage:
-                    metadata["usage"] = claude_message.usage
+            usage = getattr(result_message, "usage", None)
+            if usage:
+                metadata["usage"] = usage
 
-                if (
-                    hasattr(claude_message, "total_cost_usd")
-                    and claude_message.total_cost_usd is not None
-                ):
-                    metadata["cost_usd"] = float(claude_message.total_cost_usd)
+            cost = getattr(result_message, "total_cost_usd", None)
+            if cost is not None:
+                metadata["cost_usd"] = float(cost)
 
-                if (
-                    hasattr(claude_message, "duration_ms")
-                    and claude_message.duration_ms is not None
-                ):
-                    metadata["duration_ms"] = int(claude_message.duration_ms)
+            duration = getattr(result_message, "duration_ms", None)
+            if duration is not None:
+                metadata["duration_ms"] = int(duration)
 
-                if hasattr(claude_message, "session_id") and claude_message.session_id:
-                    metadata["session_id"] = str(claude_message.session_id)
+            session_id = getattr(result_message, "session_id", None)
+            if session_id:
+                metadata["session_id"] = str(session_id)
+
+            stop_reason = getattr(result_message, "stop_reason", None)
+            if stop_reason:
+                metadata["stop_reason"] = stop_reason
 
         except (AttributeError, TypeError, ValueError) as e:
             logger.warning(f"Error extracting metadata: {e}")
+
+        return metadata
+
+    @staticmethod
+    def to_usage_metadata(usage: Optional[Dict[str, Any]]) -> Optional[UsageMetadata]:
+        """
+        Convert an Anthropic-style usage dict into LangChain ``UsageMetadata``.
+
+        Mirrors ChatAnthropic: ``input_tokens`` includes cache reads and cache writes.
+        """
+        if not usage:
+            return None
+
+        try:
+            base_input = int(usage.get("input_tokens") or 0)
+            cache_read = int(usage.get("cache_read_input_tokens") or 0)
+            cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+            output_tokens = int(usage.get("output_tokens") or 0)
+        except (TypeError, ValueError):
+            return None
+
+        input_tokens = base_input + cache_read + cache_creation
+        metadata = UsageMetadata(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+            input_token_details={"cache_read": cache_read, "cache_creation": cache_creation},
+        )
+
+        details = usage.get("output_tokens_details") or {}
+        thinking_tokens = details.get("thinking_tokens") if isinstance(details, dict) else None
+        if thinking_tokens:
+            metadata["output_token_details"] = {"reasoning": int(thinking_tokens)}
 
         return metadata

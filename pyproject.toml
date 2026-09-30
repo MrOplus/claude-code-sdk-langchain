@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-code-langchain"
-version = "0.1.0"
-description = "LangChain adapter for Claude Code SDK - Cost-effective prototyping without API fees"
+version = "0.2.0"
+description = "LangChain chat model backed by the Claude Agent SDK - prototype with your Claude Code subscription"
 readme = "README.md"
 authors = [
     {name = "Stéphane Wootha Richard", email = "stephane@sawup.fr"}
@@ -20,6 +20,7 @@ keywords = [
     "chatbot",
     "ai",
     "claude-code",
+    "claude-agent-sdk",
     "prototyping",
     "cost-effective"
 ]
@@ -30,43 +31,44 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Framework :: LangChain",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "langchain-core>=0.1.0",
-    "claude-code-sdk>=0.0.23",
+    "langchain-core>=1.0.0",
+    "claude-agent-sdk>=0.2.0",
     "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-mock>=3.12.0",
+    "pytest-asyncio>=0.23.0",
     "black>=24.0.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/kapp667/claude-code-sdk-langchain"
-Repository = "https://github.com/kapp667/claude-code-sdk-langchain"
-Issues = "https://github.com/kapp667/claude-code-sdk-langchain/issues"
-Documentation = "https://github.com/kapp667/claude-code-sdk-langchain#readme"
-Changelog = "https://github.com/kapp667/claude-code-sdk-langchain/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/MrOplus/claude-code-sdk-langchain"
+Repository = "https://github.com/MrOplus/claude-code-sdk-langchain"
+Issues = "https://github.com/MrOplus/claude-code-sdk-langchain/issues"
+Documentation = "https://github.com/MrOplus/claude-code-sdk-langchain#readme"
+Changelog = "https://github.com/MrOplus/claude-code-sdk-langchain/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.black]
 line-length = 100
-target-version = ["py38", "py39", "py310", "py311"]
+target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -83,3 +85,7 @@ testpaths = ["specs"]
 python_files = ["*_test.py"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "live: calls the real Claude Code CLI (skipped when the CLI is missing or CLAUDE_SKIP_LIVE=1)",
+]
